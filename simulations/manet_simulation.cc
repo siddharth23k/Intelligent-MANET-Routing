@@ -77,7 +77,6 @@ int main(int argc, char *argv[]) {
 
     g_outDir = outDir;
 
-    // FIX 1: Set global seeds correctly for variability
     RngSeedManager::SetSeed(1);
     RngSeedManager::SetRun(rngRun);
 
@@ -93,7 +92,6 @@ int main(int argc, char *argv[]) {
     mac.SetType("ns3::AdhocWifiMac");
     NetDeviceContainer devices = wifi.Install(phy, mac, nodes);
 
-    // FIX 2: Correctly link PositionAllocator to avoid NS_ASSERT crash
     MobilityHelper mobility;
     Ptr<RandomRectanglePositionAllocator> positionAlloc = CreateObject<RandomRectanglePositionAllocator>();
     positionAlloc->SetAttribute("X", StringValue("ns3::UniformRandomVariable[Min=0.0|Max=500.0]"));
@@ -132,7 +130,6 @@ int main(int argc, char *argv[]) {
         clientApps.Stop(Seconds(simTimeSeconds));
     }
 
-    // FIX 3: Initialize FlowMonitor correctly
     FlowMonitorHelper flowmon;
     Ptr<FlowMonitor> monitor = flowmon.InstallAll();
 
@@ -144,7 +141,6 @@ int main(int argc, char *argv[]) {
     Simulator::Stop(Seconds(simTimeSeconds));
     Simulator::Run();
 
-    // FIX 4: Serialize XML output before Destroy
     std::ostringstream xmlname;
     xmlname << outDir << "/manet_flowmon_run" << g_runId << ".xml";
     monitor->SerializeToXmlFile(xmlname.str(), true, true);

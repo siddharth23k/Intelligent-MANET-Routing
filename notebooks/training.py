@@ -5,8 +5,6 @@ from sklearn.ensemble import RandomForestClassifier
 from sklearn.preprocessing import StandardScaler
 from sklearn.metrics import roc_auc_score
 import xgboost as xgb
-
-# Import TensorFlow for the Neural Network
 import tensorflow as tf
 from tensorflow import keras
 from tensorflow.keras import layers
@@ -14,7 +12,6 @@ from tensorflow.keras import layers
 warnings.filterwarnings("ignore")
 tf.get_logger().setLevel("ERROR")
 
-# Feature list matches feature_engineering.py
 FEATURES = [
     "neighbor_count", "x", "y", "time", "avg_rssi",
     "dist_to_center", "rssi_velocity", "neighbor_velocity",

@@ -10,7 +10,7 @@ sys.path.append(str(Path(__file__).resolve().parent))
 from predict import LinkFailurePredictor
 
 # Simulation config
-AREA_CENTER_X = 250.0  # Adjusted to match your 500x500 grid center
+AREA_CENTER_X = 250.0  
 AREA_CENTER_Y = 250.0
 DEFAULT_RADIUS = 250.0
 
@@ -24,7 +24,6 @@ class DatasetRouter:
         for _, row in snapshot.iterrows():
             nid = int(row["node_id"])
             
-            # MUST match the order in training.py exactly
             feat_vector = np.array([
                 row["neighbor_count"],
                 row["x"],
@@ -71,7 +70,6 @@ class DatasetRouter:
 
         if len(edge_features) > 0:
             X = np.array(edge_features)
-            # This will now pass 14 features, satisfying the model
             reliabilities, _ = self.predictor.predict(X)
 
             for (u, v), r in zip(edge_pairs, reliabilities):

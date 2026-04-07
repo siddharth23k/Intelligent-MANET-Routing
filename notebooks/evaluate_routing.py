@@ -1,10 +1,3 @@
-# ═══════════════════════════════════════════════════════════════════════════════
-# evaluate_routing.py
-# -------------------
-# Systematic evaluation of ML-based routing vs hop-count baseline routing
-# across all test simulation runs and all timesteps.
-# ═══════════════════════════════════════════════════════════════════════════════
-
 import sys
 import os
 import random
@@ -19,9 +12,8 @@ from scipy import stats   # for paired t-test
 sys.path.append(str(Path(__file__).resolve().parent.parent / "src"))
 from routing_from_dataset import DatasetRouter
 
-# ── Config ────────────────────────────────────────────────────────────────────
 DATASET_PATH   = "dataset/manet_featured_dataset.csv"
-TEST_RUNS      = [25, 26, 27, 28, 29, 30]   # must match training.py
+TEST_RUNS      = [25, 26, 27, 28, 29, 30]  
 PAIRS_PER_STEP = 5                           # source-dest pairs per timestep
 RADIUS         = 250.0                       # communication radius (metres)
 RANDOM_SEED    = 42
@@ -31,9 +23,7 @@ np.random.seed(RANDOM_SEED)
 
 os.makedirs("assets", exist_ok=True)
 
-# ═══════════════════════════════════════════════════════════════════════════════
 # 1. Initialise
-# ═══════════════════════════════════════════════════════════════════════════════
 print("=" * 65)
 print("MANET Routing Evaluation — ML vs Hop-Count Baseline")
 print("=" * 65)
@@ -51,10 +41,7 @@ print(f"  Test runs      : {all_runs}")
 print(f"  Timesteps      : {len(all_times)} ({all_times[0]} → {all_times[-1]})")
 print(f"  Total test rows: {len(test_df)}")
 
-
-# ═══════════════════════════════════════════════════════════════════════════════
 # 2. Evaluation loop
-# ═══════════════════════════════════════════════════════════════════════════════
 print("\n" + "=" * 65)
 print("Running routing evaluation...")
 print("=" * 65)
@@ -94,7 +81,7 @@ for run_id in all_runs:
             ml_path   = router.find_ml_path(G_ml, src, dst)
             base_path = router.find_baseline_path(G_base, src, dst)
 
-            # Only record if BOTH paths exist (fair comparison)
+            # Only record if BOTH paths exist 
             if ml_path is None or base_path is None:
                 continue
 
@@ -129,10 +116,7 @@ if len(records) == 0:
 
 results = pd.DataFrame(records)
 
-
-# ═══════════════════════════════════════════════════════════════════════════════
 # 3. Aggregate metrics
-# ═══════════════════════════════════════════════════════════════════════════════
 print("\n" + "=" * 65)
 print("Aggregate Results")
 print("=" * 65)
@@ -165,9 +149,7 @@ per_run = results.groupby("run_id")[["ml_avg_reliability", "base_avg_reliability
 per_run["improvement_%"] = ((per_run["ml_avg_reliability"] - per_run["base_avg_reliability"]) / per_run["base_avg_reliability"] * 100)
 print(per_run.round(4).to_string())
 
-# ═══════════════════════════════════════════════════════════════════════════════
 # 4. Plots (Section unchanged but ensured output path exists)
-# ═══════════════════════════════════════════════════════════════════════════════
 time_series = results.groupby("time").agg(
     ml_avg_rel   = ("ml_avg_reliability",  "mean"),
     base_avg_rel = ("base_avg_reliability","mean"),

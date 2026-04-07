@@ -5,7 +5,7 @@ INPUT_FILE = "dataset/manet_dataset.csv"
 OUTPUT_FILE = "dataset/manet_featured_dataset.csv"
 
 def engineer():
-    df = pd.read_csv("dataset/manet_dataset.csv") # Use the output from build_dataset
+    df = pd.read_csv("dataset/manet_dataset.csv") 
     df = df.sort_values(["run_id", "node_id", "time"]).reset_index(drop=True)
 
     # Core Features
@@ -13,7 +13,7 @@ def engineer():
     df["rssi_velocity"] = df.groupby(["run_id", "node_id"])["avg_rssi"].diff().fillna(0)
     df["neighbor_velocity"] = df.groupby(["run_id", "node_id"])["neighbor_count"].diff().fillna(0)
 
-    # Network Features (The missing ones!)
+    # Network Features 
     df["pdr"] = np.where(df["tx_packets"] > 0, df["rx_packets"] / df["tx_packets"], 1.0)
     df["log_delay"] = np.log1p(df["delay_sum"])
 

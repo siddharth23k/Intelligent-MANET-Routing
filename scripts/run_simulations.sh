@@ -1,5 +1,4 @@
 #!/usr/bin/env bash
-
 set -euo pipefail
 
 # Find repo root (script is inside repo/scripts)
@@ -35,6 +34,6 @@ for seed in $(seq 1 $NUM_RUNS); do
 
 done
 
-echo "-------------------------------------"
+echo "---"
 echo "All simulations completed."
 echo "Files saved in: $DATA_DIR"
