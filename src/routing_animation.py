@@ -1,305 +1,175 @@
-import pandas as pd
+import sys
 import numpy as np
+import pandas as pd
 import networkx as nx
 import matplotlib.pyplot as plt
 from matplotlib.animation import FuncAnimation
+from pathlib import Path
 
-from predict import LinkFailurePredictor
-
+sys.path.append(str(Path(__file__).resolve().parent))
+from routing_from_dataset import DatasetRouter
 
 class MANETAnimation:
-
-    def __init__(self, dataset_path):
-
+    def __init__(self, dataset_path, start_time=10.0):
         print("Loading dataset...")
         self.df = pd.read_csv(dataset_path)
 
         print("Loading ML predictor...")
-        self.predictor = LinkFailurePredictor()
+        self.router = DatasetRouter()  # use DatasetRouter instead of raw predictor
 
-        self.times = sorted(self.df["time"].unique())
+        all_times = sorted(self.df["time"].unique())
+        self.times = [t for t in all_times if t >= start_time]
 
-        # store reliability metrics
+        if not self.times:
+            print("Warning: No data found after start_time. Using all data.")
+            self.times = all_times
+
         self.ml_scores = []
         self.baseline_scores = []
         self.time_points = []
 
-
-    def build_graph(self, snapshot, radius = 100):
-
-        G = nx.Graph()
-
-        nodes = snapshot["node_id"].values
-
-        for n in nodes:
-            G.add_node(int(n))
-
-        rows = snapshot.to_dict("records")
-
-        edge_features = []
-        edge_pairs = []
-
-        for i in range(len(rows)):
-            for j in range(i + 1, len(rows)):
-
-                n1 = int(rows[i]["node_id"])
-                n2 = int(rows[j]["node_id"])
-
-                if n1 == n2:
-                    continue
-
-                x1, y1 = rows[i]["x"], rows[i]["y"]
-                x2, y2 = rows[j]["x"], rows[j]["y"]
-
-                dist = np.sqrt((x1 - x2) ** 2 + (y1 - y2) ** 2)
-
-                if dist <= radius:
-
-                    features = [
-                        rows[i]["neighbor_count"],
-                        rows[i]["x"],
-                        rows[i]["y"],
-                        rows[i]["time"]
-                    ]
-
-                    edge_pairs.append((n1, n2))
-                    edge_features.append(features)
-
-        if len(edge_features) > 0:
-
-            X = np.array(edge_features)
-
-            reliabilities, _ = self.predictor.predict(X)
-
-            for (u, v), r in zip(edge_pairs, reliabilities):
-
-                weight = -np.log(float(r) + 1e-6)
-
-                G.add_edge(u, v, weight = weight, reliability=float(r))
-
-        return G
-
-
     def path_reliability(self, G, path):
-
-        if path is None:
+        if not path or len(path) < 2:
             return None
-
-        reliabilities = []
-
-        for u, v in zip(path[:-1], path[1:]):
-            reliabilities.append(G[u][v]["reliability"])
-
-        if len(reliabilities) == 0:
-            return None
-
-        return np.mean(reliabilities)
-
+        rels = [G[u][v]["reliability"] for u, v in zip(path[:-1], path[1:])]
+        return np.mean(rels)
 
     def animate(self):
+        fig, ax = plt.subplots(figsize=(11, 8))
 
-        fig, ax = plt.subplots(figsize = (9, 7))
+        pad = 30
+        x_min, x_max = self.df["x"].min() - pad, self.df["x"].max() + pad
+        y_min, y_max = self.df["y"].min() - pad, self.df["y"].max() + pad
 
         def update(frame):
-
             ax.clear()
-            ax.set_xlim(0, 500)
-            ax.set_ylim(0, 500)
+            ax.set_xlim(x_min, x_max)
+            ax.set_ylim(y_min, y_max)
 
             t = self.times[frame]
-
             snapshot = self.df[self.df["time"] == t]
 
-            G = self.build_graph(snapshot)
+            # Filter nodes stuck at (0,0)
+            snapshot = snapshot[(snapshot["x"] != 0) | (snapshot["y"] != 0)]
+            if snapshot.empty:
+                return
 
-            pos = {}
+            # Use DatasetRouter to build graph (better averaged features + radius=65)
+            G_ml, G_base, pos = self.router.build_graph(snapshot, radius=65)
 
-            for _, row in snapshot.iterrows():
-                pos[int(row["node_id"])] = (row["x"], row["y"])
+            source, target = 0, 5
+            ml_path = self.router.find_ml_path(G_ml, source, target)
+            base_path = self.router.find_baseline_path(G_base, source, target)
 
-            source = 0
-            target = 5
-
-            # ML reliability path
-            try:
-                ml_path = nx.shortest_path(G, source, target, weight = "weight")
-            except nx.NetworkXNoPath:
-                ml_path = None
-
-            # Baseline shortest-hop path
-            try:
-                baseline_path = nx.shortest_path(G, source, target)
-            except nx.NetworkXNoPath:
-                baseline_path = None
-
-
-            # Reliability tracking 
-
-            ml_rel = self.path_reliability(G, ml_path)
-            baseline_rel = self.path_reliability(G, baseline_path)
+            # Reliability tracking
+            ml_rel = self.path_reliability(G_ml, ml_path)
+            baseline_rel = self.path_reliability(G_base, base_path)
 
             if ml_rel is not None and baseline_rel is not None:
-
                 self.ml_scores.append(ml_rel)
                 self.baseline_scores.append(baseline_rel)
                 self.time_points.append(t)
 
-
-            # DRAW NODES 
-            nx.draw_networkx_nodes(
-                G,
-                pos,
-                node_size = 200,
-                node_color = "#9ecae1",   # lighter blue
-                edgecolors = "black",
-                linewidths = 0.6,
-                ax = ax
-            )
-
-
-            # DRAW EDGES 
+            # Draw edges colored by reliability (use G_ml for display)
             edge_colors = []
-
-            for u, v, data in G.edges(data = True):
-
+            for u, v, data in G_ml.edges(data=True):
                 r = data["reliability"]
-
-                if r > 0.8:
-                    edge_colors.append("green")
-                elif r > 0.5:
-                    edge_colors.append("orange")
-                else:
-                    edge_colors.append("red")
+                color = "green" if r > 0.75 else "orange" if r > 0.4 else "red"
+                edge_colors.append(color)
 
             nx.draw_networkx_edges(
-                G,
-                pos,
-                edge_color = edge_colors,
-                width = 1,          # uniform thin edges
-                alpha = 0.6,
-                ax = ax
+                G_ml, pos,
+                edge_color=edge_colors,
+                width=1.2, alpha=0.4, ax=ax
             )
 
-
-            # BASELINE ROUTE 
-            if baseline_path:
-
-                baseline_edges = list(zip(baseline_path[:-1], baseline_path[1:]))
-
+            # Baseline path
+            if base_path:
                 nx.draw_networkx_edges(
-                    G,
-                    pos,
-                    edgelist = baseline_edges,
-                    width = 2.5,
-                    edge_color = "#ff66cc",
-                    ax = ax
+                    G_ml, pos,
+                    edgelist=list(zip(base_path[:-1], base_path[1:])),
+                    width=3.5, edge_color="#ff66cc", alpha=0.9, ax=ax
                 )
 
-
-            # ML ROUTE 
+            # ML path
             if ml_path:
-
-                ml_edges = list(zip(ml_path[:-1], ml_path[1:]))
-
                 nx.draw_networkx_edges(
-                    G,
-                    pos,
-                    edgelist = ml_edges,
-                    width = 3,
-                    edge_color = "blue",
-                    ax = ax
+                    G_ml, pos,
+                    edgelist=list(zip(ml_path[:-1], ml_path[1:])),
+                    width=4.0, edge_color="blue", ax=ax
                 )
 
-
-            # NODE LABELS 
-            nx.draw_networkx_labels(
-                G,
-                pos,
-                font_size = 8,
-                font_color = "black",
-                ax = ax
+            nx.draw_networkx_nodes(
+                G_ml, pos,
+                node_size=300, node_color="#9ecae1",
+                edgecolors="black", linewidths=0.8, ax=ax
             )
+            nx.draw_networkx_labels(G_ml, pos, font_size=9, ax=ax)
 
-
-            # GRID 
-            ax.grid(True, linestyle = "--", alpha = 0.3)
-
-
-            # LEGEND PANEL 
             legend_text = (
-                "Legend\n\n"
-                "Blue Path      : ML-selected route\n"
-                "Pink Path      : Baseline shortest-hop\n"
-                "Green Edge     : High reliability\n"
-                "Orange Edge    : Medium reliability\n"
-                "Red Edge       : Low reliability\n"
-                f"\nTime Step      : {t}"
+                f"TIME: {t:.1f}s\n\n"
+                "BLUE : ML Path (Reliable)\n"
+                "PINK : Baseline (Shortest)\n"
+                "GREEN: High Reliability (>0.75)\n"
+                "ORANGE: Medium Reliability\n"
+                "RED  : Link Failure Risk"
             )
-
             ax.text(
-                0.02,
-                0.98,
-                legend_text,
-                transform = ax.transAxes,
-                fontsize = 9,
-                verticalalignment = "top",
-                bbox = dict(
-                    boxstyle = "round,pad=0.5",
-                    facecolor = "white",
-                    edgecolor = "black",
-                    alpha = 0.9
-                )
+                0.02, 0.98, legend_text,
+                transform=ax.transAxes,
+                verticalalignment='top',
+                fontsize=9,
+                bbox=dict(boxstyle='round,pad=0.5', facecolor='white', alpha=0.9)
             )
 
-
-            # TITLE 
-            ax.set_title("MANET Routing", fontsize = 16, pad = 15)
-
-
+            ax.set_title("Intelligent MANET Routing Animation", fontsize=14)
             ax.set_xlabel("X Position")
             ax.set_ylabel("Y Position")
+            ax.grid(True, linestyle="--", alpha=0.3)
 
-
-        anim = FuncAnimation(
-            fig,
-            update,
-            frames = len(self.times),
-            interval = 500
-        )
-
+        anim = FuncAnimation(fig, update, frames=len(self.times), interval=300, repeat=False)
         plt.show()
 
+        # Reliability comparison plot
+        if self.time_points:
+            fig, ax = plt.subplots(figsize=(10, 5))
 
-        # RELIABILITY COMPARISON PLOT 
-        plt.figure(figsize = (8,5))
+            ml = np.array(self.ml_scores)
+            base = np.array(self.baseline_scores)
+            times = np.array(self.time_points)
 
-        plt.plot(
-            self.time_points,
-            self.ml_scores,
-            label = "ML Routing",
-            color = "blue"
-        )
+            ax.plot(times, ml, label="ML Routing", color="blue", linewidth=2)
+            ax.plot(times, base, label="Baseline Routing", color="#ff66cc", linewidth=2)
 
-        plt.plot(
-            self.time_points,
-            self.baseline_scores,
-            label = "Baseline Routing",
-            color = "#ff66cc"
-        )
+            ax.fill_between(times, base, ml, where=(ml >= base),
+                            alpha=0.15, color="blue", label="ML Advantage")
 
-        plt.xlabel("Time")
-        plt.ylabel("Average Route Reliability")
+            worst_idx = np.argmin(base)
+            ax.annotate(
+                f"Baseline drops to {base[worst_idx]:.2f}",
+                xy=(times[worst_idx], base[worst_idx]),
+                xytext=(times[worst_idx] + 2, base[worst_idx] + 0.1),
+                arrowprops=dict(arrowstyle="->", color="black"),
+                fontsize=9
+            )
 
-        plt.title("ML Routing vs Baseline Routing Reliability")
+            ax.axhline(np.mean(ml), color="blue", linestyle="--", alpha=0.4,
+                       label=f"ML Mean: {np.mean(ml):.2f}")
+            ax.axhline(np.mean(base), color="#ff66cc", linestyle="--", alpha=0.4,
+                       label=f"Baseline Mean: {np.mean(base):.2f}")
 
-        plt.legend()
-        plt.grid(True)
+            ax.set_xlabel("Time (s)")
+            ax.set_ylabel("Average Route Reliability")
+            ax.set_title("ML Routing vs Baseline Routing Reliability")
+            ax.legend(loc="lower right")
+            ax.set_ylim(0, 1.05)
+            ax.grid(True, alpha=0.3)
 
-        plt.show()
+            plt.tight_layout()
+            plt.savefig("assets/reliability_vs_time.jpg", dpi=150)
+            plt.show()
 
 
 if __name__ == "__main__":
-
-    animation = MANETAnimation("dataset/manet_dataset.csv")
-
+    animation = MANETAnimation("dataset/manet_featured_dataset.csv", start_time=10.0)
     animation.animate()

@@ -86,7 +86,7 @@ class DatasetRouter:
         except: return None
 
     def find_baseline_path(self, G, src, dst):
-        try: return nx.shortest_path(G, src, dst, weight="weight")
+        try: return nx.shortest_path(G, src, dst)
         except: return None
 
     def compute_route_metrics(self, G, path):
