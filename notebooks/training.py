@@ -83,8 +83,8 @@ def train():
     joblib.dump(scaler, "models/scaler.pkl")
     # nn.save("models/neural_network.keras")
     
-    # Save ensemble weights (33% each)
-    joblib.dump({"rf": 0.4, "xgb": 0.6}, "models/ensemble_weights.pkl")
+    # Save ensemble weights
+    joblib.dump({"rf": 0.4, "xgb": 0.6}, "models/ensemble_weights.pkl") # neural network temporarily removed
     print("All models saved successfully.")
 
 if __name__ == "__main__":

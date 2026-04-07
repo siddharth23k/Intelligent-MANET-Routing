@@ -138,9 +138,9 @@ Derived from temporal ground truth: a node is labelled 1 if its neighbor count d
 
 | Model | Test AUC |
 |---|---|
-| Random Forest | reported after training |
-| XGBoost | reported after training |
-| Neural Network | reported after training |
+| Random Forest | 0.8774 |
+| XGBoost | 0.8819 |
+| Neural Network | 0.80 |
 | **Ensemble** | **reported after training** |
 
 > Run `notebooks/training.py` to reproduce. Results are printed to console and saved as `assets/training_results.png`.
@@ -149,9 +149,9 @@ Derived from temporal ground truth: a node is labelled 1 if its neighbor count d
 
 | Metric | Baseline (hop-count) | ML Routing | Improvement |
 |---|---|---|---|
-| Avg Route Reliability | reported after eval | reported after eval | reported after eval |
-| Min Link Reliability | reported after eval | reported after eval | reported after eval |
-| Avg Hop Count | reported after eval | reported after eval | — |
+| Avg Route Reliability | 0.6089 | 0.7170 | +17.8% |
+| Min Link Reliability | 0.5967 | 0.6912 | +15.8% |
+| Avg Hop Count | 1.2156 | 1.6344 | +0.42 |
 
 > Run `notebooks/evaluate_routing.py` to reproduce. Results printed to console and saved as `assets/routing_evaluation.png`.
 
