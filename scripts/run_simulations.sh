@@ -10,7 +10,7 @@ SIM_SRC="$REPO_ROOT/simulations/manet_simulation.cc"
 DATA_DIR="$REPO_ROOT/dataset"
 
 # ns-3 installation directory
-NS3_DIR="${NS3_DIR:-$HOME/ns-3-dev}"
+NS3_DIR="${NS3_DIR:-$HOME/ns-3.47}"
 
 # create dataset directory if missing
 mkdir -p "$DATA_DIR"

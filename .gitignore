@@ -1,9 +1,15 @@
 # Python virtual environment
 venv/
+env/
 
 # Python cache and compiled bytecode
 __pycache__/
 *.pyc
+*.pyo
+*.pyd
+
+# Jupyter Notebook checkpoints
+.ipynb_checkpoints/
 
 # Packet capture files
 *.pcap
@@ -11,13 +17,17 @@ __pycache__/
 # macOS system file
 .DS_Store
 
-# Generated XML datasets (FlowMonitor + other dataset XMLs)
-dataset/manet_flowmon_*.xml
-dataset/positions_run*.csv
+# Generated XML datasets
 dataset/*.xml
+dataset/*.csv
+# Specific exclusions if you want to keep a 'readme.md' in dataset
+!dataset/.gitkeep 
 
-SS_and_Videos/
-research paper/
-netanim/
+# Models (Machine Learning)
+*.pkl
+*.keras
+*.h5
+*.joblib
 
-ui/
+# Logs
+*.log
