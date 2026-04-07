@@ -107,7 +107,7 @@ NS-3 Simulation  →  Dataset  →  Ensemble ML  →  Reliability-Weighted Routi
 | Timesteps per run | 60 |
 | Total samples | ~54,000 |
 | Mobility model | Random Waypoint |
-| Simulation area | 1000 × 1000 m |
+| Simulation area | 500 × 500 m |
 | Communication radius | 250 m |
 | Simulator | NS-3 (IEEE 802.11 ad hoc) |
 
@@ -270,7 +270,7 @@ joblib
 
 Full pinned versions in `requirements.txt`.
 
----
+<!-- ---
 
 ## Key Design Decisions
 
@@ -287,7 +287,7 @@ XGBoost consistently outperforms RF and shallow NNs on tabular data in benchmark
 Using a fixed threshold (e.g., `rssi < −75`) to define failure creates a circular problem — you train a model to predict the same rule you used to create labels. Temporal labelling (`neighbor_count dropped at t+1`) derives ground truth from what the simulation actually observed, making the ML problem meaningful.
 
 **Why average node features for edges?**
-Each edge (u, v) is represented by the average of both endpoint feature vectors. This reflects that link quality depends on both nodes — a link between a healthy node and a dying node should score worse than a link between two healthy nodes.
+Each edge (u, v) is represented by the average of both endpoint feature vectors. This reflects that link quality depends on both nodes — a link between a healthy node and a dying node should score worse than a link between two healthy nodes. -->
 
 ---
 
