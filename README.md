@@ -1,10 +1,10 @@
 # Intelligent MANET Routing
 
-[![Simulation](https://img.shields.io/badge/Simulation-NS--3-green)](https://www.nsnam.org/)
-[![Python](https://img.shields.io/badge/Python-3.11-blue?logo=python)](https://python.org)
-[![Framework](https://img.shields.io/badge/Framework-TensorFlow-orange?logo=tensorflow)](https://tensorflow.org)
-[![ML](https://img.shields.io/badge/ML-Scikit--Learn%20%7C%20XGBoost-F7931E)](https://scikit-learn.org)
-[![Routing](https://img.shields.io/badge/Routing-NetworkX-blue)](https://networkx.org)
+[Simulation](https://www.nsnam.org/)
+[Python](https://python.org)
+[Framework](https://tensorflow.org)
+[ML](https://scikit-learn.org)
+[Routing](https://networkx.org)
 
 > Predicting wireless link failures in Mobile Ad Hoc Networks using an ensemble of Random Forest, XGBoost, and Neural Network models — and using those predictions to route packets through more stable paths.
 
@@ -100,30 +100,34 @@ NS-3 Simulation  →  Dataset  →  Ensemble ML  →  Reliability-Weighted Routi
 
 ## Dataset
 
-| Property | Value |
-|---|---|
-| Simulation runs | 30 |
-| Nodes per run | 30 |
-| Timesteps per run | 60 |
-| Total samples | ~54,000 |
-| Mobility model | Random Waypoint |
-| Simulation area | 500 × 500 m |
-| Communication radius | 250 m |
-| Simulator | NS-3 (IEEE 802.11 ad hoc) |
+
+| Property             | Value                     |
+| -------------------- | ------------------------- |
+| Simulation runs      | 30                        |
+| Nodes per run        | 30                        |
+| Timesteps per run    | 60                        |
+| Total samples        | ~54,000                   |
+| Mobility model       | Random Waypoint           |
+| Simulation area      | 500 × 500 m               |
+| Communication radius | 250 m                     |
+| Simulator            | NS-3 (IEEE 802.11 ad hoc) |
+
 
 ### Features
 
-| Feature | Type | Description |
-|---|---|---|
-| `neighbor_count` | Original | Number of nodes currently in range |
-| `x`, `y` | Original | Node position in simulation area |
-| `time` | Original | Simulation timestep |
-| `avg_rssi` | Original | Average received signal strength (dBm); −1000 = isolated |
-| `dist_to_center` | Engineered | Euclidean distance to area centre (500, 500) |
-| `rssi_velocity` | Engineered | Change in RSSI from previous timestep |
-| `neighbor_velocity` | Engineered | Change in neighbor count from previous timestep |
-| `pdr` | Engineered | Packet Delivery Ratio = rx\_packets / tx\_packets |
-| `log_delay` | Engineered | log1p(delay\_sum) — compressed total packet delay |
+
+| Feature             | Type       | Description                                              |
+| ------------------- | ---------- | -------------------------------------------------------- |
+| `neighbor_count`    | Original   | Number of nodes currently in range                       |
+| `x`, `y`            | Original   | Node position in simulation area                         |
+| `time`              | Original   | Simulation timestep                                      |
+| `avg_rssi`          | Original   | Average received signal strength (dBm); −1000 = isolated |
+| `dist_to_center`    | Engineered | Euclidean distance to area centre (500, 500)             |
+| `rssi_velocity`     | Engineered | Change in RSSI from previous timestep                    |
+| `neighbor_velocity` | Engineered | Change in neighbor count from previous timestep          |
+| `pdr`               | Engineered | Packet Delivery Ratio = rxpackets / txpackets            |
+| `log_delay`         | Engineered | log1p(delaysum) — compressed total packet delay          |
+
 
 ### Label
 
@@ -136,22 +140,26 @@ Derived from temporal ground truth: a node is labelled 1 if its neighbor count d
 
 ### ML Model Performance
 
-| Model | Test AUC |
-|---|---|
-| Random Forest | 0.8774 |
-| XGBoost | 0.8819 |
-| Neural Network | 0.80 |
-| **Ensemble** | **reported after training** |
+
+| Model          | Test AUC                    |
+| -------------- | --------------------------- |
+| Random Forest  | 0.8774                      |
+| XGBoost        | 0.8819                      |
+| Neural Network | 0.80                        |
+| **Ensemble**   | **reported after training** |
+
 
 > Run `notebooks/training.py` to reproduce. Results are printed to console and saved as `assets/training_results.png`.
 
 ### Routing Performance
 
-| Metric | Baseline (hop-count) | ML Routing | Improvement |
-|---|---|---|---|
-| Avg Route Reliability | 0.6089 | 0.7170 | +17.8% |
-| Min Link Reliability | 0.5967 | 0.6912 | +15.8% |
-| Avg Hop Count | 1.2156 | 1.6344 | +0.42 |
+
+| Metric                | Baseline (hop-count) | ML Routing | Improvement |
+| --------------------- | -------------------- | ---------- | ----------- |
+| Avg Route Reliability | 0.6089               | 0.7170     | +17.8%      |
+| Min Link Reliability  | 0.5967               | 0.6912     | +15.8%      |
+| Avg Hop Count         | 1.2156               | 1.6344     | +0.42       |
+
 
 > Run `notebooks/evaluate_routing.py` to reproduce. Results printed to console and saved as `assets/routing_evaluation.png`.
 
@@ -269,25 +277,6 @@ joblib
 ```
 
 Full pinned versions in `requirements.txt`.
-
-<!-- ---
-
-## Key Design Decisions
-
-**Why run-based train/test split?**
-Rows from the same simulation run are temporally correlated — a random row shuffle would leak future timesteps into the training set, artificially inflating AUC. Splitting by `run_id` ensures the test set contains entirely unseen mobility patterns.
-
-**Why −log(reliability) as edge weight?**
-Dijkstra minimises the sum of edge weights. Using `−log(R)` means it minimises `−Σlog(Rᵢ)` = maximises `Σlog(Rᵢ)` = maximises `∏Rᵢ` (product of reliabilities). This is equivalent to finding the path that maximises the probability that *all* links survive simultaneously — the theoretically correct objective.
-
-**Why XGBoost weight = 0.4 in ensemble?**
-XGBoost consistently outperforms RF and shallow NNs on tabular data in benchmarks. The weights (RF=0.3, XGB=0.4, NN=0.3) reflect this while keeping all three models in the ensemble for diversity. Weights can be tuned based on individual model AUCs after training.
-
-**Why temporal labels instead of threshold rules?**
-Using a fixed threshold (e.g., `rssi < −75`) to define failure creates a circular problem — you train a model to predict the same rule you used to create labels. Temporal labelling (`neighbor_count dropped at t+1`) derives ground truth from what the simulation actually observed, making the ML problem meaningful.
-
-**Why average node features for edges?**
-Each edge (u, v) is represented by the average of both endpoint feature vectors. This reflects that link quality depends on both nodes — a link between a healthy node and a dying node should score worse than a link between two healthy nodes. -->
 
 ---
 
