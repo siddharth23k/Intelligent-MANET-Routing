@@ -12,7 +12,7 @@ from predict import LinkFailurePredictor
 # Simulation config
 AREA_CENTER_X = 250.0  
 AREA_CENTER_Y = 250.0
-DEFAULT_RADIUS = 250.0
+DEFAULT_RADIUS = 150.0
 
 class DatasetRouter:
     def __init__(self):
@@ -44,6 +44,14 @@ class DatasetRouter:
         return node_features
 
     def build_graph(self, snapshot, radius=DEFAULT_RADIUS):
+        """
+        Build connectivity graphs for a single time snapshot.
+
+        IMPORTANT LIMITATION / DESIGN CHOICE:
+        - The ML model is trained on *node-level* features and predicts node instability.
+        - Routing requires *edge-level* reliabilities. Without per-link measurements, we approximate
+          edge reliability from node reliabilities (conservative: weakest endpoint dominates).
+        """
         node_features = self._compute_node_features(snapshot)
         rows = snapshot.to_dict("records")
 
@@ -55,27 +63,31 @@ class DatasetRouter:
             G_base.add_node(nid)
 
         edge_pairs = []
-        edge_features = []
+        node_ids = sorted(node_features.keys())
+        X_nodes = np.vstack([node_features[nid] for nid in node_ids]) if node_ids else np.zeros((0, 0))
+        node_reliability = {}
+        if len(node_ids) > 0:
+            reliabilities, _ = self.predictor.predict(X_nodes)
+            node_reliability = {nid: float(r) for nid, r in zip(node_ids, reliabilities)}
 
         for i in range(len(rows)):
             for j in range(i + 1, len(rows)):
                 n1, n2 = int(rows[i]["node_id"]), int(rows[j]["node_id"])
+                if n1 == n2:
+                    # Can happen if snapshot contains duplicate node_ids (e.g., mixed runs).
+                    continue
                 dist = np.sqrt((rows[i]["x"] - rows[j]["x"])**2 + (rows[i]["y"] - rows[j]["y"])**2)
 
                 if dist <= radius:
-                    # Average the features of both nodes to represent the link
-                    feat_avg = (node_features[n1] + node_features[n2]) / 2.0
                     edge_pairs.append((n1, n2))
-                    edge_features.append(feat_avg)
 
-        if len(edge_features) > 0:
-            X = np.array(edge_features)
-            reliabilities, _ = self.predictor.predict(X)
-
-            for (u, v), r in zip(edge_pairs, reliabilities):
-                r = float(np.clip(r, 0.001, 0.999))
-                G_ml.add_edge(u, v, weight=-np.log(r), reliability=r)
-                G_base.add_edge(u, v, weight=1, reliability=r)
+        for (u, v) in edge_pairs:
+            ru = float(node_reliability.get(u, 0.5))
+            rv = float(node_reliability.get(v, 0.5))
+            # Conservative edge reliability: weakest endpoint dominates.
+            r = float(np.clip(min(ru, rv), 0.001, 0.999))
+            G_ml.add_edge(u, v, weight=-np.log(r), reliability=r)
+            G_base.add_edge(u, v, weight=1, reliability=r)
 
         return G_ml, G_base, {int(r["node_id"]): (r["x"], r["y"]) for r in rows}
 

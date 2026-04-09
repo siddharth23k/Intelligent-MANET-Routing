@@ -24,9 +24,10 @@ def generate_labels():
     cond1 = (df["neighbor_count"] - df["f_neighbors"] >= NB_DROP)
     cond2 = (df["avg_rssi"] - df["f_rssi"] >= RSSI_DROP) & (df["f_rssi"] > RSSI_SENTINEL)
     cond3 = (df["f_rssi"] == RSSI_SENTINEL)
-    cond4 = (df["avg_rssi"] == RSSI_SENTINEL)
 
-    df["link_failure"] = (cond1 | cond2 | cond3 | cond4).astype(int)
+    # NOTE: Do not label "already isolated now" as failure; that leaks the label directly
+    # via the current-state feature avg_rssi.
+    df["link_failure"] = (cond1 | cond2 | cond3).astype(int)
     
     # Drop help columns and save
     df = df.drop(columns=["f_neighbors", "f_rssi"])

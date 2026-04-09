@@ -38,6 +38,12 @@ from predict import LinkFailurePredictor
 NodeId = int
 EdgeWithFeatures = Tuple[NodeId, NodeId, Sequence[float]]
 
+FEATURES: List[str] = [
+    "neighbor_count", "x", "y", "time", "avg_rssi",
+    "dist_to_center", "rssi_velocity", "neighbor_velocity",
+    "pdr", "log_delay",
+    "rssi_trend_3", "neighbor_trend_3", "rssi_std_5", "neighbor_std_5",
+]
 
 class MLWeightedDijkstra:
     """
@@ -59,32 +65,30 @@ class MLWeightedDijkstra:
                 "Check that `models/scaler.pkl` is compatible with sklearn."
             )
 
-    def _coerce_feature_matrix(self, X: np.ndarray) -> np.ndarray:
-        """
-        Ensures X has the model's expected feature dimension.
+        if self._n_features != len(FEATURES):
+            raise RuntimeError(
+                "Feature schema mismatch: model expects "
+                f"{self._n_features} features but this module defines {len(FEATURES)}. "
+                "Update `FEATURES` here (and keep it identical to training)."
+            )
 
-        - If too short: pad with zeros (assume missing engineered features)
-        - If too long: truncate extras
-        """
+    def _assert_feature_matrix(self, X: np.ndarray) -> np.ndarray:
         X = np.asarray(X, dtype=float)
         if X.ndim == 1:
             X = X.reshape(1, -1)
-
-        n = X.shape[1]
-        if n == self._n_features:
-            return X
-        if n < self._n_features:
-            pad = np.zeros((X.shape[0], self._n_features - n), dtype=float)
-            return np.concatenate([X, pad], axis=1)
-        return X[:, : self._n_features]
+        if X.shape[1] != self._n_features:
+            raise ValueError(
+                f"Invalid feature matrix shape {X.shape}; expected (*, {self._n_features}). "
+                f"Expected feature order: {FEATURES}"
+            )
+        return X
 
     def build_graph(self, nodes: Iterable[NodeId], edges: Iterable[EdgeWithFeatures]) -> nx.Graph:
         """
         - **nodes**: iterable of node ids
         - **edges**: iterable of tuples (u, v, features)
 
-        `features` may be shorter/longer than the trained schema; it will be
-        padded/truncated to match the current model.
+        `features` must match the trained schema exactly; mismatches raise an error.
         """
         G = nx.Graph()
         for n in nodes:
@@ -101,7 +105,7 @@ class MLWeightedDijkstra:
         if not edge_pairs:
             return G
 
-        X = self._coerce_feature_matrix(np.vstack([f.reshape(1, -1) for f in edge_features]))
+        X = self._assert_feature_matrix(np.vstack([f.reshape(1, -1) for f in edge_features]))
         reliabilities, _ = self.predictor.predict(X)
 
         for (u, v), r in zip(edge_pairs, reliabilities):
@@ -112,7 +116,7 @@ class MLWeightedDijkstra:
 
         return G
 
-    def build_graph_from_snapshot(self, snapshot, radius: float = 65.0):
+    def build_graph_from_snapshot(self, snapshot, radius: float = 150.0):
         """
         Builds a graph from a dataset snapshot (rows for a single time step).
 
@@ -170,7 +174,7 @@ class MLWeightedDijkstra:
                     edge_features.append(feat_avg)
 
         if edge_pairs:
-            X = self._coerce_feature_matrix(np.array(edge_features, dtype=float))
+            X = self._assert_feature_matrix(np.array(edge_features, dtype=float))
             reliabilities, _ = self.predictor.predict(X)
             for (u, v), r in zip(edge_pairs, reliabilities):
                 r = float(np.clip(r, 0.001, 0.999))
@@ -213,7 +217,7 @@ def _demo_from_dataset():
         raise RuntimeError("No usable snapshot found (all nodes appear at (0,0) or too few nodes).")
 
     router = MLWeightedDijkstra()
-    G, _pos = router.build_graph_from_snapshot(snapshot, radius=65.0)
+    G, _pos = router.build_graph_from_snapshot(snapshot, radius=150.0)
 
     src, dst = 0, 5
     path = router.find_path(G, src, dst)
@@ -222,16 +226,17 @@ def _demo_from_dataset():
 
 
 def _demo_toy_graph():
-    # Minimal toy graph: features will be padded to the trained feature size.
+    # Minimal toy graph: features must match the trained schema exactly.
     router = MLWeightedDijkstra()
 
     nodes = [0, 1, 2, 3, 4]
     edges = [
-        (0, 1, [3, 120, 200, 10]),
-        (1, 2, [2, 200, 250, 10]),
-        (0, 3, [1, 300, 100, 10]),
-        (3, 4, [4, 250, 150, 10]),
-        (4, 2, [2, 260, 200, 10]),
+        # Provide 14 features in the expected order; values here are illustrative.
+        (0, 1, [3, 120, 200, 10, -70, 50, -0.2, -1, 0.9, 1.0, -0.1, -0.3, 2.0, 1.0]),
+        (1, 2, [2, 200, 250, 10, -75, 60, -0.1, 0, 0.8, 1.2, -0.05, -0.1, 1.5, 1.2]),
+        (0, 3, [1, 300, 100, 10, -85, 80, 0.0, -2, 0.7, 1.4, 0.02, 0.2, 3.0, 2.5]),
+        (3, 4, [4, 250, 150, 10, -65, 40, -0.3, 1, 0.95, 0.9, -0.2, -0.4, 1.0, 0.8]),
+        (4, 2, [2, 260, 200, 10, -72, 55, -0.15, 0, 0.85, 1.1, -0.08, -0.2, 1.8, 1.1]),
     ]
 
     G = router.build_graph(nodes, edges)

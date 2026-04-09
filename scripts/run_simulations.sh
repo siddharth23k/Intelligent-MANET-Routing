@@ -30,7 +30,7 @@ for seed in $(seq 1 $NUM_RUNS); do
 
   cd "$NS3_DIR"
 
-  ./ns3 run "scratch/manet_simulation --RngRun=$seed --runId=$seed --outDir=$DATA_DIR"
+  ./ns3 run "scratch/manet_simulation --RngRun=$seed --runId=$seed --outDir=$DATA_DIR --commRadius=150"
 
 done
 

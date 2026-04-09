@@ -18,11 +18,17 @@ NS_LOG_COMPONENT_DEFINE("ManetSimulation");
 static std::string g_outDir = ".";
 static uint32_t g_runId = 0;
 
-// Simple log-distance RSSI approximation
+// Simple log-distance RSSI approximation + stochastic shadowing noise.
+// This is intentionally lightweight (doesn't require PHY tracing) but avoids a purely deterministic
+// geometry->RSSI mapping which makes prediction unrealistically easy.
 double ApproximateRssiDbm(double txPowerDbm, double distanceMeters, double pathLossExp = 3.0) {
     if (distanceMeters < 0.1) distanceMeters = 0.1;
     double loss = 10.0 * pathLossExp * std::log10(distanceMeters);
-    return txPowerDbm - loss;
+    static Ptr<NormalRandomVariable> shadowing = CreateObject<NormalRandomVariable>();
+    shadowing->SetAttribute("Mean", DoubleValue(0.0));
+    shadowing->SetAttribute("Variance", DoubleValue(16.0)); // sigma=4 dB (log-normal shadowing proxy)
+    const double noise_db = shadowing->GetValue();
+    return (txPowerDbm - loss) + noise_db;
 }
 
 void SamplePositionsAndWrite(NodeContainer nodes, double sampleTimeSec, double neighborRadius, double txPowerDbm) {
@@ -67,12 +73,14 @@ int main(int argc, char *argv[]) {
     double simTimeSeconds = 60.0;
     uint32_t rngRun = 1;
     std::string outDir = ".";
+    double commRadiusMeters = 150.0;
 
     CommandLine cmd;
     cmd.AddValue("numNodes", "Number of nodes", numNodes);
     cmd.AddValue("runId", "Run identifier", g_runId);
     cmd.AddValue("RngRun", "RNG run seed", rngRun);
     cmd.AddValue("outDir", "Output directory", outDir);
+    cmd.AddValue("commRadius", "Communication/neighborhood radius (m) used for sampling", commRadiusMeters);
     cmd.Parse(argc, argv);
 
     g_outDir = outDir;
@@ -96,7 +104,9 @@ int main(int argc, char *argv[]) {
     Ptr<RandomRectanglePositionAllocator> positionAlloc = CreateObject<RandomRectanglePositionAllocator>();
     positionAlloc->SetAttribute("X", StringValue("ns3::UniformRandomVariable[Min=0.0|Max=500.0]"));
     positionAlloc->SetAttribute("Y", StringValue("ns3::UniformRandomVariable[Min=0.0|Max=500.0]"));
-    
+
+    // Ensure nodes have a valid random initial position at t=0 (avoid all nodes starting at (0,0)).
+    mobility.SetPositionAllocator(positionAlloc);
     mobility.SetMobilityModel(
         "ns3::RandomWaypointMobilityModel",
         "Speed", StringValue("ns3::UniformRandomVariable[Min=5.0|Max=20.0]"),
@@ -135,7 +145,7 @@ int main(int argc, char *argv[]) {
 
     // Schedule position sampling
     for (double t = 1.0; t <= simTimeSeconds; t += 1.0) {
-        Simulator::Schedule(Seconds(t), &SamplePositionsAndWrite, nodes, t, 250.0, 16.0);
+        Simulator::Schedule(Seconds(t), &SamplePositionsAndWrite, nodes, t, commRadiusMeters, 16.0);
     }
 
     Simulator::Stop(Seconds(simTimeSeconds));

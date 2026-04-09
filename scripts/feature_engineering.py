@@ -10,8 +10,10 @@ def engineer():
 
     # Core Features
     df["dist_to_center"] = np.sqrt((df["x"]-250)**2 + (df["y"]-250)**2)
-    df["rssi_velocity"] = df.groupby(["run_id", "node_id"])["avg_rssi"].diff().fillna(0)
-    df["neighbor_velocity"] = df.groupby(["run_id", "node_id"])["neighbor_count"].diff().fillna(0)
+    # Past-only velocities: shift first so the current row can't "see" instantaneous transitions.
+    g = df.groupby(["run_id", "node_id"])
+    df["rssi_velocity"] = g["avg_rssi"].transform(lambda s: s.shift(1).diff()).fillna(0)
+    df["neighbor_velocity"] = g["neighbor_count"].transform(lambda s: s.shift(1).diff()).fillna(0)
 
     # Network Features 
     df["pdr"] = np.where(df["tx_packets"] > 0, df["rx_packets"] / df["tx_packets"], 1.0)

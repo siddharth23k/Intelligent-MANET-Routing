@@ -35,7 +35,8 @@ NS-3 Simulation  →  Dataset  →  Ensemble ML  →  Reliability-Weighted Routi
 │  simulations/manet_simulation.cc   (NS-3 C++)                    │
 │  └── 30 nodes, Random Waypoint mobility, 60 timesteps            │
 │  └── 30 independent runs (different random seeds)                │
-│  └── Records: node positions, neighbor counts, RSSI, flow stats  │
+│  └── Records: node positions, neighbor counts, stochastic RSSI,   │
+│      and FlowMonitor per-flow traffic stats                        │
 │                                                                  │
 │  scripts/run_simulations.sh  →  positions_runN.csv               │
 │  scripts/build_dataset.py    →  manet_raw_dataset.csv            │
@@ -50,7 +51,7 @@ NS-3 Simulation  →  Dataset  →  Ensemble ML  →  Reliability-Weighted Routi
 │        • neighbor_count drops by ≥ 2                              │
 │        • avg_rssi drops by ≥ 15 dBm (when future RSSI exists)     │
 │        • future avg_rssi == -1000 (becomes isolated)              │
-│        • current avg_rssi == -1000 (already isolated)             │
+│        (note: current isolation is NOT used in the label)         │
 │                                                                  │
 │  scripts/feature_engineering.py                                  │
 │  └── Adds engineered + rolling history features →                │
@@ -61,11 +62,12 @@ NS-3 Simulation  →  Dataset  →  Ensemble ML  →  Reliability-Weighted Routi
 │                    PHASE 3 — ML TRAINING                         │
 │                                                                  │
 │  experiments/training.py                                         │
-│  └── Train/test split by run_id (25–30 are held-out test runs)    │
-│      ← reduces leakage from temporally correlated rows            │
+│  └── Train/test split by run_id (6 runs sampled with seed=42)     │
+│      ← reduces leakage from temporally correlated rows and avoids  │
+│         a fixed “tail split”                                      │
 │  └── StandardScaler fit on train features only                    │
 │  └── Random Forest + XGBoost trained on scaled features           │
-│  └── Ensemble = weighted average of model probabilities           │
+│  └── Ensemble = AUC-weighted average of model probabilities       │
 │  └── Saves: models/random_forest.pkl, models/xgboost_model.pkl,   │
 │           models/scaler.pkl, models/ensemble_weights.pkl          │
 └──────────────────────────────────────────────────────────────────┘
@@ -75,12 +77,13 @@ NS-3 Simulation  →  Dataset  →  Ensemble ML  →  Reliability-Weighted Routi
 │                                                                  │
 │  experiments/evaluate_routing.py                                 │
 │  └── For every timestep in every test run:                       │
-│      • Build connectivity graph from positions within radius      │
-│      • Predict per-edge reliability with the ML ensemble          │
+│      • Build connectivity graph from positions within radius=150m │
+│      • Predict per-node reliability with the ML ensemble          │
+│      • Approximate per-edge reliability as min(endpoint reliab.)  │
 │      • ML routing: Dijkstra on weight = −log(reliability)         │
 │      • Baseline: shortest path by hop count                       │
 │      • Record avg/min link reliability and hop counts             │
-│  └── Paired t-test for statistical significance                  │
+│  └── Paired t-test on per-run means (N=6)                         │
 │  └── Saves plot: assets/routing_evaluation.png                    │
 │  └── Saves raw results: dataset/routing_results.csv               │
 └──────────────────────────────────────────────────────────────────┘
@@ -115,7 +118,7 @@ This section describes the **full runtime/data flow**, including **dataset handl
 
 - **Keys**: `run_id`, `time`, `node_id`
 - **Node state**: `x`, `y`, `neighbor_count`, `avg_rssi`
-- **Run-level traffic**: `tx_packets`, `rx_packets`, `lost_packets`, `delay_sum`
+- **Node-level traffic (from FlowMonitor per-flow parsing)**: `tx_packets`, `rx_packets`, `lost_packets`, `delay_sum`
 
 ### 2) Label generation (temporal horizon)
 
@@ -129,7 +132,6 @@ This section describes the **full runtime/data flow**, including **dataset handl
   - **Neighbor drop**: `neighbor_count - future_neighbor_count >= 2`
   - **RSSI drop**: `avg_rssi - future_avg_rssi >= 15` (and future RSSI is not the sentinel)
   - **Becomes isolated**: `future_avg_rssi == -1000`
-  - **Already isolated**: `avg_rssi == -1000`
 - **Output**: `dataset/manet_dataset.csv` (same rows + `link_failure`)
 
 ### 3) Feature engineering (static + temporal history)
@@ -142,8 +144,8 @@ Features are built in three layers:
 
 - **Core geometric/velocity features**
   - `dist_to_center = sqrt((x-250)^2 + (y-250)^2)`
-  - `rssi_velocity = diff(avg_rssi)` per `(run_id, node_id)`
-  - `neighbor_velocity = diff(neighbor_count)` per `(run_id, node_id)`
+  - `rssi_velocity = diff(shift(1, avg_rssi))` per `(run_id, node_id)` (past-only)
+  - `neighbor_velocity = diff(shift(1, neighbor_count))` per `(run_id, node_id)` (past-only)
 - **Network/flow-derived features**
   - `pdr = rx_packets / tx_packets` (falls back to 1.0 if `tx_packets==0`)
   - `log_delay = log1p(delay_sum)`
@@ -157,7 +159,7 @@ Features are built in three layers:
 
 - **Script**: `experiments/training.py`
 - **Dataset**: `dataset/manet_featured_dataset.csv`
-- **Split**: test runs are `run_id ∈ {25,26,27,28,29,30}`.
+- **Split**: 6 test runs sampled from available run_ids with `seed=42` (printed at runtime).
 
 **Internal model working**
 
@@ -171,7 +173,7 @@ Features are built in three layers:
   - XGBoost classifier → `models/xgboost_model.pkl`
 - **Ensemble logic**:
   - Each model outputs `P(link_failure=1 | X)`.
-  - A weighted sum produces the ensemble failure probability:
+  - An AUC-weighted sum produces the ensemble failure probability:
 
   p_{fail} = w_{rf}p_{rf} + w_{xgb}p_{xgb}
 
@@ -187,12 +189,10 @@ Routing needs **edge** reliabilities, but the dataset is naturally **per-node** 
 
 - **Snapshot**: filter dataset to a single `(run_id, time)` slice.
 - **Connectivity**: connect nodes u,v if their Euclidean distance is within a radius threshold (e.g. `radius=65` or `radius=250` depending on the script).
-- **Edge feature vector**: compute
-  - `edge_features(u,v) = (node_features(u) + node_features(v)) / 2`
-  - (implemented in `src/routing_from_dataset.py` inside `DatasetRouter.build_graph`)
-- **Predict** `r(u,v)` using `src/predict.py`:
-  - Loads `random_forest.pkl`, `xgboost_model.pkl`, `scaler.pkl`, `ensemble_weights.pkl`
-  - Returns both `reliability` and `failure_prob`
+- **Predict per-node reliability** `r(u)` using `src/predict.py`.
+- **Approximate edge reliability** conservatively as:
+  - `r(u,v) = min(r(u), r(v))`
+  - (implemented in `src/routing_from_dataset.py`)
 
 ### 6) Routing: reliability-weighted Dijkstra
 
@@ -240,7 +240,7 @@ Implementation:
 | Total samples        | ~54,000                   |
 | Mobility model       | Random Waypoint           |
 | Simulation area      | 500 × 500 m               |
-| Communication radius | 250 m                     |
+| Communication radius | 150 m                     |
 | Simulator            | NS-3 (IEEE 802.11 ad hoc) |
 
 
@@ -271,7 +271,7 @@ Implementation:
 ### Label
 
 `link_failure` — binary (0 = stable, 1 = failing).
-Derived from a temporal look-ahead: a node is labelled 1 if, within the next 5 timesteps, its neighbor count drops by ≥ 2, its RSSI drops by ≥ 15 dBm (when future RSSI exists), it becomes isolated (future RSSI sentinel −1000), or it is currently isolated.
+Derived from a temporal look-ahead: a node is labelled 1 if, within the next 5 timesteps, its neighbor count drops by ≥ 2, its RSSI drops by ≥ 15 dBm (when future RSSI exists), or it becomes isolated (future RSSI sentinel −1000).
 
 ---
 
@@ -279,27 +279,35 @@ Derived from a temporal look-ahead: a node is labelled 1 if, within the next 5 t
 
 ### ML Model Performance
 
+Test split: 6 run_ids sampled with `seed=42`. Example run: `[1, 4, 8, 9, 21, 24]`.
 
-| Model         | Test AUC                                    |
-| ------------- | ------------------------------------------- |
-| Random Forest | printed by `experiments/training.py`        |
-| XGBoost       | printed by `experiments/training.py`        |
-| **Ensemble**  | weighted combination used at inference time |
+| Model         | Test AUC |
+| ------------- | -------: |
+| Random Forest | 0.8039   |
+| XGBoost       | 0.8119   |
+| **Ensemble**  | AUC-weighted blend (weights printed + saved) |
 
+Ensemble weights (AUC-weighted):
 
-> Run `experiments/training.py` to reproduce. AUCs are printed to console. Models and scaler are saved into `models/`.
+- `w_rf = 0.4975`
+- `w_xgb = 0.5025`
+
+> Run `experiments/training.py` to reproduce. AUCs and the chosen weights are printed to console. Models and scaler are saved into `models/`.
 
 ### Routing Performance
 
+Test runs: `[1, 4, 8, 9, 21, 24]`, radius = 150m.
 
 | Metric                | Baseline (hop-count) | ML Routing | Improvement |
 | --------------------- | -------------------- | ---------- | ----------- |
-| Avg Route Reliability | 0.6089               | 0.7170     | +17.8%      |
-| Min Link Reliability  | 0.5967               | 0.6912     | +15.8%      |
-| Avg Hop Count         | 1.2156               | 1.6344     | +0.42       |
+| Avg Route Reliability | 0.6339               | 0.6792     | +7.2%       |
+| Min Link Reliability  | 0.6072               | 0.6402     | +5.4%       |
+| Avg Hop Count         | 2.0678               | 2.2089     | +0.14       |
 
 
-> Run `experiments/evaluate_routing.py` to reproduce. Results printed to console and saved as `assets/routing_evaluation.png` (and raw results in `dataset/routing_results.csv`).
+Paired t-test p-value (per-run means, N=6): `0.000031`
+
+> Run `experiments/evaluate_routing.py` to reproduce. Results are printed to console and saved as `assets/routing_evaluation.png` (and raw results in `dataset/routing_results.csv`).
 
 **Key insight:** ML routing consistently selects paths with higher reliability at the cost of a small increase in hop count. The bottleneck link metric (min reliability) shows an even larger improvement — meaning ML routing avoids the single worst link in the path more aggressively than hop-count routing.
 
@@ -369,6 +377,11 @@ pip install -r requirements.txt
 ### Run the full pipeline
 
 ```bash
+# Step 0 (optional) — Re-run NS-3 simulations
+# (Requires NS-3 installed; uses --commRadius=150 by default)
+bash scripts/run_simulations.sh
+python scripts/build_dataset.py
+
 # Step 1 — Generate labels (uses manet_raw_dataset.csv)
 python scripts/add_failure_label.py
 
@@ -393,7 +406,7 @@ python src/routing_animation.py
 If you have NS-3 installed:
 
 ```bash
-./scripts/run_simulations.sh
+bash scripts/run_simulations.sh
 python scripts/build_dataset.py
 ```
 

@@ -1,4 +1,5 @@
 import os, joblib, warnings
+import random
 import pandas as pd
 import numpy as np
 from sklearn.ensemble import RandomForestClassifier
@@ -19,7 +20,7 @@ FEATURES = [
     "rssi_trend_3", "neighbor_trend_3", "rssi_std_5", "neighbor_std_5"
 ]
 TARGET = "link_failure"
-TEST_RUNS = [25, 26, 27, 28, 29, 30]
+TEST_RUNS = None  # chosen reproducibly from dataset run_ids
 
 # def build_nn(input_dim):
 #     model = keras.Sequential([
@@ -38,8 +39,13 @@ def train():
     df = pd.read_csv("dataset/manet_featured_dataset.csv")
     df["avg_rssi"] = df["avg_rssi"].replace(-1000.0, -95.0)
 
-    train_df = df[~df["run_id"].isin(TEST_RUNS)]
-    test_df = df[df["run_id"].isin(TEST_RUNS)]
+    run_ids = sorted(df["run_id"].dropna().unique().astype(int).tolist())
+    rng = random.Random(42)
+    test_runs = sorted(rng.sample(run_ids, k=min(6, len(run_ids))))
+    print(f"Test runs (seed=42): {test_runs}")
+
+    train_df = df[~df["run_id"].isin(test_runs)]
+    test_df = df[df["run_id"].isin(test_runs)]
 
     X_train, y_train = train_df[FEATURES], train_df[TARGET]
     X_test, y_test = test_df[FEATURES], test_df[TARGET]
@@ -81,7 +87,12 @@ def train():
     # nn.save("models/neural_network.keras")
     
     # Save ensemble weights
-    joblib.dump({"rf": 0.4, "xgb": 0.6}, "models/ensemble_weights.pkl") # neural network temporarily removed
+    denom = float(rf_auc + xgb_auc) if float(rf_auc + xgb_auc) > 0 else 1.0
+    w_rf = float(rf_auc / denom)
+    w_xgb = float(1.0 - w_rf)
+    weights = {"rf": w_rf, "xgb": w_xgb}
+    print(f"Ensemble weights (AUC-weighted): {weights}")
+    joblib.dump(weights, "models/ensemble_weights.pkl")  # neural network temporarily removed
     print("All models saved successfully.")
 
 if __name__ == "__main__":
