@@ -1,6 +1,5 @@
 import glob
 import os
-import shutil
 import xml.etree.ElementTree as ET
 
 import pandas as pd
@@ -69,18 +68,8 @@ def main():
     pos_files = sorted(glob.glob(os.path.join(PAPER_RAW_DIR, "positions_run*.csv")))
     xml_files = sorted(glob.glob(os.path.join(PAPER_RAW_DIR, "manet_flowmon_run*.xml")))
 
-    # Fallback: use existing project data if paper/raw not generated yet.
     if not pos_files:
-        os.makedirs(PAPER_RAW_DIR, exist_ok=True)
-        for f in glob.glob("dataset/positions_run*.csv"):
-            shutil.copy2(f, os.path.join(PAPER_RAW_DIR, os.path.basename(f)))
-        for f in glob.glob("dataset/manet_flowmon_run*.xml"):
-            shutil.copy2(f, os.path.join(PAPER_RAW_DIR, os.path.basename(f)))
-        pos_files = sorted(glob.glob(os.path.join(PAPER_RAW_DIR, "positions_run*.csv")))
-        xml_files = sorted(glob.glob(os.path.join(PAPER_RAW_DIR, "manet_flowmon_run*.xml")))
-
-    if not pos_files:
-        raise FileNotFoundError("No position files found in dataset/paper/raw or dataset/")
+        raise FileNotFoundError("No position files found in dataset/paper/raw. Run scripts/run_paper_simulations.sh first.")
 
     flow_by_run = {}
     for xmlf in xml_files:

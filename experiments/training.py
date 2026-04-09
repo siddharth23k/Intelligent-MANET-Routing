@@ -1,3 +1,4 @@
+import argparse
 import os, joblib, warnings
 import random
 import pandas as pd
@@ -34,9 +35,9 @@ TEST_RUNS = None  # chosen reproducibly from dataset run_ids
 #     model.compile(optimizer="adam", loss="binary_crossentropy", metrics=["AUC"])
 #     return model
 
-def train():
+def train(dataset_path="dataset/manet_featured_dataset.csv"):
     print("Step 1: Loading Data...")
-    df = pd.read_csv("dataset/manet_featured_dataset.csv")
+    df = pd.read_csv(dataset_path)
     df["avg_rssi"] = df["avg_rssi"].replace(-1000.0, -95.0)
 
     run_ids = sorted(df["run_id"].dropna().unique().astype(int).tolist())
@@ -96,4 +97,7 @@ def train():
     print("All models saved successfully.")
 
 if __name__ == "__main__":
-    train()
+    parser = argparse.ArgumentParser(description="Train RF+XGB link-failure predictors.")
+    parser.add_argument("--dataset", default="dataset/manet_featured_dataset.csv", help="Path to featured dataset CSV.")
+    args = parser.parse_args()
+    train(dataset_path=args.dataset)

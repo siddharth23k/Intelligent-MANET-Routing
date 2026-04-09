@@ -29,6 +29,8 @@ def main():
 
     # Paper-inspired feature proxies from available columns
     df["distance_from_center"] = np.sqrt((df["x"] - 250.0) ** 2 + (df["y"] - 250.0) ** 2)
+    # Keep alias for compatibility with our existing model feature names.
+    df["dist_to_center"] = df["distance_from_center"]
     df["d_res"] = np.clip(COMM_RADIUS - df["distance_from_center"], 0.0, COMM_RADIUS)
 
     # Node density proxy from neighborhood count
@@ -37,6 +39,16 @@ def main():
     # LET proxy: expected time before link edge (larger residual distance and slower change => larger LET)
     g = df.groupby(["run_id", "node_id"])
     df["neighbor_delta"] = g["neighbor_count"].transform(lambda s: s.diff().fillna(0))
+    # Our model features (same schema as experiments/training.py).
+    df["rssi_velocity"] = g["avg_rssi"].transform(lambda s: s.shift(1).diff()).fillna(0)
+    df["neighbor_velocity"] = g["neighbor_count"].transform(lambda s: s.shift(1).diff()).fillna(0)
+    df["pdr"] = np.where(df["tx_packets"] > 0, df["rx_packets"] / df["tx_packets"], 1.0)
+    df["log_delay"] = np.log1p(df["delay_sum"])
+    df["rssi_trend_3"] = g["rssi_velocity"].transform(lambda x: x.shift(1).rolling(3, min_periods=1).mean()).fillna(0)
+    df["neighbor_trend_3"] = g["neighbor_velocity"].transform(lambda x: x.shift(1).rolling(3, min_periods=1).mean()).fillna(0)
+    df["rssi_std_5"] = g["avg_rssi"].transform(lambda x: x.shift(1).rolling(5, min_periods=2).std()).fillna(0)
+    df["neighbor_std_5"] = g["neighbor_count"].transform(lambda x: x.shift(1).rolling(5, min_periods=2).std()).fillna(0)
+
     speed_proxy = np.abs(df["neighbor_delta"]) + 1.0
     df["LET"] = df["d_res"] / speed_proxy
     df["LS"] = 1.0 - np.exp(-df["LET"] / ALPHA)
@@ -65,6 +77,15 @@ def main():
         "rx_packets",
         "lost_packets",
         "delay_sum",
+        "dist_to_center",
+        "rssi_velocity",
+        "neighbor_velocity",
+        "pdr",
+        "log_delay",
+        "rssi_trend_3",
+        "neighbor_trend_3",
+        "rssi_std_5",
+        "neighbor_std_5",
         "d_res",
         "T_hello",
         "ND",

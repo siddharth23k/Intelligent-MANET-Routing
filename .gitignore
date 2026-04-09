@@ -33,4 +33,5 @@ dataset/*.csv
 *.log
 
 #datasets
+dataset/paper/processed/*.csv
 *.csv
