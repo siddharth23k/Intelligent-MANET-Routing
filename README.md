@@ -401,6 +401,32 @@ python src/routing_from_dataset.py
 python src/routing_animation.py
 ```
 
+### Run paper-baseline comparison pipeline
+
+This repository now includes a paper-inspired FRLFP baseline workflow and unified comparison scripts.
+
+```bash
+# Build paper-style dataset/features/LFP (auto-falls back to existing dataset files if paper/raw missing)
+python scripts/paper_build_dataset.py
+python scripts/paper_feature_engineering.py
+python scripts/paper_compute_lfp.py
+
+# Train our ensemble model if model files are not present
+python experiments/training.py
+
+# Run all evaluations and produce summary outputs
+python experiments/compare_all_models.py
+```
+
+Generated outputs:
+
+- `results/ours_results.csv`
+- `results/paper_baseline_results.csv`
+- `results/classic_baseline_results.csv`
+- `results/comparison_metrics.csv`
+- `results/stat_tests.csv`
+- `results/comparison_summary.md`
+
 ### Re-run NS-3 simulations (optional)
 
 If you have NS-3 installed:

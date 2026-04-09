@@ -1,0 +1,3 @@
+method,p_value,n_runs
+ours,3.108709334275195e-05,6
+paper_baseline,0.3632174676491227,6

@@ -1,0 +1,16 @@
+paper_reference:
+  simulator: ns-3.26
+  area_m: [1000, 1000]
+  mobility_model: random_waypoint
+  traffic: cbr
+  packet_size_bytes: [500, 512]
+  communication_radius_m: [150, 200, 250]
+  node_counts: [50, 80, 100, 200, 300, 400, 500]
+  mobility_speeds_mps: [0, 5, 15, 20, 30, 45, 60]
+  rounds: [200, 400, 600, 800, 1000]
+
+evaluation_defaults:
+  random_seed: 42
+  test_run_count: 6
+  pairs_per_step: 5
+  radius_m: 150.0
