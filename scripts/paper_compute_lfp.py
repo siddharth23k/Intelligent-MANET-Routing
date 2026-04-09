@@ -1,7 +1,12 @@
 import os
+import sys
+from pathlib import Path
 
 import numpy as np
 import pandas as pd
+
+sys.path.append(str(Path(__file__).resolve().parent.parent / "baseline_paper"))
+from threshold_model import AdaptiveThresholdModel
 
 INPUT_FILE = "dataset/paper/processed/paper_featured_dataset.csv"
 OUTPUT_FILE = "dataset/paper/processed/paper_lfp_dataset.csv"
@@ -27,10 +32,6 @@ def _minmax(s):
     if np.isclose(hi - lo, 0.0):
         return pd.Series(np.zeros(len(s)), index=s.index)
     return (s - lo) / (hi - lo)
-
-
-def _sigmoid(x):
-    return 1.0 / (1.0 + np.exp(-x))
 
 
 def main():
@@ -74,15 +75,22 @@ def main():
     df["lfp"] = np.clip(fail_score, 0.0, 1.0)
 
     # Adaptive threshold proxy (SFRNNR-inspired adaptive boundary).
-    z = (
-        1.8 * n["LQ_mean"]
-        + 1.2 * n["RSSI"]
-        + 1.0 * n["LS"]
-        + 0.8 * n["LET"]
-        - 1.0 * n["LL_d"]
-        - 0.8 * (1.0 - n["ND"])
-    )
-    df["lfp_threshold"] = np.clip(0.35 + 0.3 * _sigmoid(z - z.mean()), 0.2, 0.8)
+    thr_model = AdaptiveThresholdModel()
+    thr_rows = []
+    for i in range(len(df)):
+        thr_rows.append(
+            thr_model.predict_threshold(
+                {
+                    "LQ_mean": float(n["LQ_mean"].iloc[i]),
+                    "RSSI_norm": float(n["RSSI"].iloc[i]),
+                    "LS_norm": float(n["LS"].iloc[i]),
+                    "LET_norm": float(n["LET"].iloc[i]),
+                    "LL_d_norm": float(n["LL_d"].iloc[i]),
+                    "ND_norm": float(n["ND"].iloc[i]),
+                }
+            )
+        )
+    df["lfp_threshold"] = np.clip(np.array(thr_rows, dtype=float), 0.2, 0.8)
     df["paper_predicted_failure"] = (df["lfp"] > df["lfp_threshold"]).astype(int)
 
     df = df.drop(columns=["f_neighbors", "f_rssi"])

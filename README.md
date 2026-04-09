@@ -406,15 +406,19 @@ python src/routing_animation.py
 This repository now includes a paper-inspired FRLFP baseline workflow and unified comparison scripts.
 
 ```bash
-# Build paper-style dataset/features/LFP (auto-falls back to existing dataset files if paper/raw missing)
+# 0) Generate paper-baseline NS-3 raw data
+#    (uses simulations/paper_frlfp_simulation.cc)
+bash scripts/run_paper_simulations.sh
+
+# 1) Build paper-style dataset/features/LFP
 python scripts/paper_build_dataset.py
 python scripts/paper_feature_engineering.py
 python scripts/paper_compute_lfp.py
 
-# Train our ensemble model if model files are not present
+# 2) Train OUR model artifacts (RF + XGBoost) if not already present
 python experiments/training.py
 
-# Run all evaluations and produce summary outputs
+# 3) Run all evaluations and produce summary outputs
 python experiments/compare_all_models.py
 ```
 
@@ -426,6 +430,59 @@ Generated outputs:
 - `results/comparison_metrics.csv`
 - `results/stat_tests.csv`
 - `results/comparison_summary.md`
+
+## Execution Order (What To Run, In Order)
+
+For strict paper-baseline vs our-model comparison:
+
+1. `bash scripts/run_paper_simulations.sh`
+2. `python scripts/paper_build_dataset.py`
+3. `python scripts/paper_feature_engineering.py`
+4. `python scripts/paper_compute_lfp.py`
+5. `python experiments/training.py` (our RF/XGB model training)
+6. `python experiments/compare_all_models.py`
+
+### Important clarifications
+
+- `scripts/run_simulations.sh` is the **legacy/original** simulation driver for your original pipeline (`dataset/`), not the paper-baseline pipeline.
+- `scripts/run_paper_simulations.sh` is the script used for paper-baseline data generation (`dataset/paper/raw/`).
+- `experiments/training.py` currently trains **only your model** (`RandomForest + XGBoost`).
+- The paper baseline in this repo is evaluated through rule/formula + adaptive-threshold approximation scripts (`paper_compute_lfp.py`, `baseline_paper/frlfp_router.py`), not a full published SFRNNR code release.
+
+## File Usage Map
+
+### Core files used in current comparison workflow
+
+- `simulations/paper_frlfp_simulation.cc` → paper-style NS-3 data generation
+- `scripts/run_paper_simulations.sh` → runs paper NS-3 sim over seeds
+- `scripts/paper_build_dataset.py` → builds paper raw dataset CSV
+- `scripts/paper_feature_engineering.py` → computes paper-inspired factors
+- `scripts/paper_compute_lfp.py` → computes LFP + adaptive threshold columns
+- `baseline_paper/frlfp_router.py` → paper baseline routing behavior
+- `baseline_paper/threshold_model.py` → adaptive threshold helper used by paper LFP script
+- `experiments/evaluate_paper_baseline.py` → evaluates paper baseline routing
+- `experiments/evaluate_ours.py` → evaluates our RF/XGB routing
+- `experiments/evaluate_classic_baseline.py` → evaluates classic shortest-path baseline
+- `experiments/compare_all_models.py` → orchestrates comparison and writes outputs
+- `src/predict.py`, `src/routing_from_dataset.py` → used by `evaluate_ours.py`
+
+### Legacy/original pipeline (still valid, but not required for paper comparison)
+
+- `simulations/manet_simulation.cc`
+- `scripts/run_simulations.sh`
+- `scripts/build_dataset.py`
+- `scripts/add_failure_label.py`
+- `scripts/feature_engineering.py`
+- `experiments/evaluate_routing.py`
+- `src/routing_dijkstra.py`
+- `src/routing_animation.py`
+
+### Visualization scripts
+
+- `src/routing_animation.py` is **not** called by `compare_all_models.py`.
+- It is optional/manual visualization for the original featured dataset:
+  - Run manually: `python src/routing_animation.py`
+  - It uses `dataset/manet_featured_dataset.csv`, not the paper dataset by default.
 
 ### Re-run NS-3 simulations (optional)
 
