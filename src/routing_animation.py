@@ -1,5 +1,6 @@
 import sys
 import random
+import argparse
 import numpy as np
 import pandas as pd
 import networkx as nx
@@ -314,5 +315,25 @@ class MANETAnimation:
 
 
 if __name__ == "__main__":
-    animation = MANETAnimation("dataset/manet_featured_dataset.csv", start_time=10.0)
+    parser = argparse.ArgumentParser(description="Animate MANET routing over a featured dataset.")
+    parser.add_argument(
+        "--dataset",
+        default="dataset/paper/processed/paper_lfp_dataset.csv",
+        help="Path to featured dataset CSV (default: shared paper dataset).",
+    )
+    parser.add_argument("--start-time", type=float, default=10.0, help="Starting time for animation.")
+    parser.add_argument("--run-id", type=int, default=None, help="Specific run_id to animate.")
+    parser.add_argument("--pair-change-every", type=int, default=10, help="Change src/dst pair every N frames.")
+    parser.add_argument("--min-hops", type=int, default=3, help="Minimum hop count when sampling src/dst.")
+    parser.add_argument("--seed", type=int, default=42, help="Random seed for pair sampling.")
+    args = parser.parse_args()
+
+    animation = MANETAnimation(
+        args.dataset,
+        start_time=args.start_time,
+        run_id=args.run_id,
+        pair_change_every=args.pair_change_every,
+        min_hops=args.min_hops,
+        random_seed=args.seed,
+    )
     animation.animate()
