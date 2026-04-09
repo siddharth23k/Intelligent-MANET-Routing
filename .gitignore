@@ -31,3 +31,6 @@ dataset/*.csv
 
 # Logs
 *.log
+
+#datasets
+*.csv
