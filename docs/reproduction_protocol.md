@@ -25,7 +25,8 @@ This repository contains:
 2. Build paper dataset: `python scripts/paper_build_dataset.py`
 3. Compute paper features: `python scripts/paper_feature_engineering.py`
 4. Compute paper LFP and threshold columns: `python scripts/paper_compute_lfp.py`
-5. Train our model (if missing): `python experiments/training.py`
-6. Evaluate all methods: `python experiments/compare_all_models.py`
+5. Train the paper SFRNNR (or let `paper_compute_lfp.py` train it on first run): `python experiments/train_sfrnnr_paper.py`
+6. Train our model (if missing): `python experiments/training.py --dataset dataset/paper/processed/paper_lfp_dataset.csv`
+7. Evaluate all methods: `python experiments/compare_all_models.py`
 
 Outputs are written under `results/` and `assets/comparison/`.

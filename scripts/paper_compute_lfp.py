@@ -1,99 +1,54 @@
+"""
+Paper baseline: supervised labels + trained SFRNNR (fuzzification, fuzzy RNN, consequent, threshold).
+
+If no trained model is present, trains SFRNNR automatically (can take several minutes).
+
+Run from repository root:
+  python scripts/paper_compute_lfp.py
+"""
+
+from __future__ import annotations
+
 import os
+import subprocess
 import sys
 from pathlib import Path
 
-import numpy as np
 import pandas as pd
 
-sys.path.append(str(Path(__file__).resolve().parent.parent / "baseline_paper"))
-from threshold_model import AdaptiveThresholdModel
+ROOT = Path(__file__).resolve().parent.parent
+sys.path.insert(0, str(ROOT / "baseline_paper"))
+
+from label_utils import add_link_failure_labels, drop_label_aux_columns  # noqa: E402
+from sfrnnr_infer import apply_sfrnnr  # noqa: E402
 
 INPUT_FILE = "dataset/paper/processed/paper_featured_dataset.csv"
 OUTPUT_FILE = "dataset/paper/processed/paper_lfp_dataset.csv"
-RSSI_SENTINEL = -1000.0
-HORIZON = 5
-
-# Paper-inspired weighted LFP factors (normalized weighted sum).
-WEIGHTS = {
-    "d_res": 0.12,
-    "LET": 0.12,
-    "ND": 0.10,
-    "RSSI": 0.14,
-    "LS": 0.10,
-    "LA": 0.10,
-    "LQ_mean": 0.16,
-    "LL_d": 0.12,
-    "T_hello": 0.04,
-}
+MODEL_FILE = ROOT / "models" / "sfrnnr_paper.keras"
 
 
-def _minmax(s):
-    lo, hi = s.min(), s.max()
-    if np.isclose(hi - lo, 0.0):
-        return pd.Series(np.zeros(len(s)), index=s.index)
-    return (s - lo) / (hi - lo)
+def ensure_sfrnnr_trained():
+    if MODEL_FILE.is_file():
+        return
+    print("No SFRNNR checkpoint found; training paper baseline model...")
+    cmd = [sys.executable, str(ROOT / "experiments" / "train_sfrnnr_paper.py")]
+    subprocess.run(cmd, cwd=str(ROOT), check=True)
 
 
 def main():
+    os.chdir(ROOT)
     if not os.path.exists(INPUT_FILE):
         raise FileNotFoundError(f"Missing {INPUT_FILE}. Run paper_feature_engineering.py first.")
 
     df = pd.read_csv(INPUT_FILE).sort_values(["run_id", "node_id", "time"]).reset_index(drop=True)
+    df = add_link_failure_labels(df)
+    df = drop_label_aux_columns(df)
 
-    # Supervised label identical to main project for fair comparisons.
-    df["f_neighbors"] = df.groupby(["run_id", "node_id"])["neighbor_count"].shift(-HORIZON)
-    df["f_rssi"] = df.groupby(["run_id", "node_id"])["avg_rssi"].shift(-HORIZON)
-    cond1 = (df["neighbor_count"] - df["f_neighbors"] >= 2)
-    cond2 = (df["avg_rssi"] - df["f_rssi"] >= 15.0) & (df["f_rssi"] > RSSI_SENTINEL)
-    cond3 = (df["f_rssi"] == RSSI_SENTINEL)
-    df["link_failure"] = (cond1 | cond2 | cond3).astype(int)
-
-    # Normalize factors to [0,1]
-    n = {}
-    n["d_res"] = _minmax(df["d_res"])
-    n["LET"] = _minmax(df["LET"])
-    n["ND"] = _minmax(df["ND"])
-    n["RSSI"] = _minmax(df["RSSI"])
-    n["LS"] = _minmax(df["LS"])
-    n["LA"] = _minmax(df["LA"])
-    n["LQ_mean"] = _minmax(df["LQ_mean"])
-    n["LL_d"] = _minmax(df["LL_d"])
-    n["T_hello"] = _minmax(df["T_hello"])
-
-    # Convert stability factors into failure tendency where needed.
-    fail_score = (
-        WEIGHTS["d_res"] * (1.0 - n["d_res"])
-        + WEIGHTS["LET"] * (1.0 - n["LET"])
-        + WEIGHTS["ND"] * (1.0 - n["ND"])
-        + WEIGHTS["RSSI"] * (1.0 - n["RSSI"])
-        + WEIGHTS["LS"] * (1.0 - n["LS"])
-        + WEIGHTS["LA"] * (1.0 - n["LA"])
-        + WEIGHTS["LQ_mean"] * (1.0 - n["LQ_mean"])
-        + WEIGHTS["LL_d"] * n["LL_d"]
-        + WEIGHTS["T_hello"] * n["T_hello"]
-    )
-    df["lfp"] = np.clip(fail_score, 0.0, 1.0)
-
-    # Adaptive threshold proxy (SFRNNR-inspired adaptive boundary).
-    thr_model = AdaptiveThresholdModel()
-    thr_rows = []
-    for i in range(len(df)):
-        thr_rows.append(
-            thr_model.predict_threshold(
-                {
-                    "LQ_mean": float(n["LQ_mean"].iloc[i]),
-                    "RSSI_norm": float(n["RSSI"].iloc[i]),
-                    "LS_norm": float(n["LS"].iloc[i]),
-                    "LET_norm": float(n["LET"].iloc[i]),
-                    "LL_d_norm": float(n["LL_d"].iloc[i]),
-                    "ND_norm": float(n["ND"].iloc[i]),
-                }
-            )
-        )
-    df["lfp_threshold"] = np.clip(np.array(thr_rows, dtype=float), 0.2, 0.8)
+    ensure_sfrnnr_trained()
+    df = apply_sfrnnr(df, repo_root=ROOT)
     df["paper_predicted_failure"] = (df["lfp"] > df["lfp_threshold"]).astype(int)
 
-    df = df.drop(columns=["f_neighbors", "f_rssi"])
+    os.makedirs(os.path.dirname(OUTPUT_FILE), exist_ok=True)
     df.to_csv(OUTPUT_FILE, index=False)
     print(f"Saved {OUTPUT_FILE} ({len(df)} rows)")
 

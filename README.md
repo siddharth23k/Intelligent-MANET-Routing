@@ -2,7 +2,7 @@
 
 This repo compares:
 
-1. A **paper-inspired FRLFP baseline** (link-failure probability + adaptive threshold + failure-aware routing)
+1. A **paper FRLFP baseline** trained as an **SFRNNR** (fuzzification → fuzzy RNN → normalization → consequent → defuzzification + adaptive threshold head) plus **FRLFP-style routing**
 2. **Our model** (RF + XGBoost failure predictor + reliability-weighted routing)
 3. A **classic shortest-path baseline**
 
@@ -64,9 +64,15 @@ Outputs:
 - `scripts/paper_feature_engineering.py`
   - Computes paper-inspired factors and our model features in one shared table.
 - `scripts/paper_compute_lfp.py`
-  - Adds labels, LFP, adaptive threshold, and paper failure predictions.
+  - Adds supervised labels, runs **SFRNNR** (trains `models/sfrnnr_paper.keras` if missing), writes `lfp`, `lfp_threshold`, and `paper_predicted_failure`.
+- `experiments/train_sfrnnr_paper.py`
+  - Standalone trainer for the paper SFRNNR (same outputs as above).
+- `baseline_paper/sfrnnr_model.py`
+  - Layered SFRNNR Keras model (fuzzification, fuzzy RNN, normalization, consequent, summation, threshold head).
+- `baseline_paper/sfrnnr_infer.py`
+  - Batch inference over node--time sequences.
 - `baseline_paper/threshold_model.py`
-  - Adaptive-threshold helper used by paper LFP computation.
+  - Teacher signal for the threshold head during SFRNNR training only.
 - `baseline_paper/frlfp_router.py`
   - Paper baseline routing behavior.
 - `experiments/training.py`
@@ -147,7 +153,8 @@ pip install -r requirements.txt
 
 ## Notes and limitations
 
-- Paper baseline is a faithful re-implementation from published equations/settings, not author-released source.
+- The SFRNNR is implemented in our codebase to match the *described* stack (fuzzy inputs, recurrent encoder, defuzzified LFP, learned threshold). It is **not** byte-identical to the original authors’ unreleased code; hyperparameters and membership counts can be tuned in `baseline_paper/sfrnnr_model.py`.
+- First run of `paper_compute_lfp.py` **trains** the SFRNNR using **fast defaults** (small net, 2 epochs, batch 512, at most 600 training sequences) so it usually finishes in a few minutes; use `python experiments/train_sfrnnr_paper.py --max-train-sequences 0 --epochs 12` (and larger `--gru-units`, `--rule-units`, `--n-mfs`) for a heavier model. Later runs load `models/sfrnnr_paper.keras` if present.
 - Results are simulation-based.
 - Routing evaluation is centralized (graph known at evaluation time).
 
