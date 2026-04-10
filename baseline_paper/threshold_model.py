@@ -3,7 +3,7 @@ import numpy as np
 
 class AdaptiveThresholdModel:
     """
-    Closed-form adaptive threshold used as a *teacher* target when training the
+    Closed-form adaptive threshold used as a teacher target when training the
     SFRNNR threshold head (see experiments/train_sfrnnr_paper.py). Final routing
     uses thresholds produced by the trained network in paper_lfp_dataset.csv.
     """
