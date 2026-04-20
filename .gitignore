@@ -20,7 +20,6 @@ __pycache__/
 # Generated XML datasets
 dataset/*.xml
 dataset/*.csv
-# Specific exclusions if you want to keep a 'readme.md' in dataset
 !dataset/.gitkeep 
 
 # Models (Machine Learning)

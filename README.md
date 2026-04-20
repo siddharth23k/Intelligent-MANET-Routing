@@ -1,153 +1,136 @@
 # Intelligent MANET Routing
 
-This repo compares:
+A clean comparison of MANET routing strategies: **Paper Baseline** vs **Our RF+XGBoost Enhancement** vs **Classic Shortest-Path**.
 
-1. A **paper FRLFP baseline** trained as an **SFRNNR** (fuzzification → fuzzy RNN → normalization → consequent → defuzzification + adaptive threshold head) plus **FRLFP-style routing**
-2. **Our model** (RF + XGBoost failure predictor + reliability-weighted routing)
-3. A **classic shortest-path baseline**
+## What This Project Does
 
-All three are now evaluated on the **same NS-3 generated dataset** and on the **same sampled source-destination decisions**.
+1. **Paper Baseline**: Implements FRLFP (Fuzzy Reliability Link Failure Prediction) using SFRNNR (fuzzification → fuzzy RNN → normalization → consequent → defuzzification + adaptive threshold head)
+2. **Our Enhancement**: Uses RandomForest + XGBoost failure predictor with reliability-weighted routing 
+3. **Classic Baseline**: Traditional shortest-path routing
 
----
-
-## What changed (important)
-
-- There is now a strict shared-data comparison pipeline.
-- `experiments/compare_all_models.py` performs a unified evaluation loop, so both methods get identical `(run_id, time, src, dst)` cases.
-- Our training now uses the same paper dataset during comparison:
-  - `python experiments/training.py --dataset dataset/paper/processed/paper_lfp_dataset.csv`
-- `scripts/paper_build_dataset.py` no longer silently falls back to old dataset files.
+All methods are evaluated on **identical NS-3 simulation data** with **fair comparison protocols**.
 
 ---
 
-## One-command style run order
+## Project Structure (Clean & Intuitive)
 
-From repo root:
+```
+Intelligent-MANET-Routing/
+|
+| methods/                   # CORE METHODS COMPARISON
+|   baseline/               # Paper baseline (SFRNNR + FRLFP)
+|   ours/                   # Our RF+XGBoost enhancement
+|
+| data/                     # UNIFIED DATASET LOCATION
+|   raw/                    # Raw NS-3 simulation outputs
+|   processed/              # Processed datasets for training
+|
+| simulation/              # NS-3 SIMULATION SETUP
+| pipeline/                # DATA PROCESSING PIPELINE
+| results/                 # COMPARISON RESULTS & MODELS
+| config/                  # CONFIGURATION FILES
+| legacy/                  # OLD IMPLEMENTATION (archived)
+```
+
+---
+
+## Quick Start (4 Commands)
 
 ```bash
-# 1) Generate NS-3 raw logs for paper baseline
-bash scripts/run_paper_simulations.sh
+# 1) Generate NS-3 simulation data
+bash simulation/run_simulation.sh
 
-# 2) Build + feature + LFP datasets
-python scripts/paper_build_dataset.py
-python scripts/paper_feature_engineering.py
-python scripts/paper_compute_lfp.py
+# 2) Process data and compute features
+python pipeline/generate_data.py
+python pipeline/engineer_features.py
 
-# 3) Train OUR model on same dataset
-python experiments/training.py --dataset dataset/paper/processed/paper_lfp_dataset.csv
+# 3) Train both models on the same data
+python pipeline/train_models.py
 
-# 4) Compare all methods on same sampled decisions
-python experiments/compare_all_models.py
+# 4) Compare all methods and get results
+python pipeline/compare_methods.py
 ```
 
-Outputs:
-
-- `results/ours_results.csv`
-- `results/paper_baseline_results.csv`
-- `results/classic_baseline_results.csv`
-- `results/comparison_metrics.csv`
-- `results/stat_tests.csv`
-- `results/comparison_summary.md`
+**Results**: Check `results/comparisons/` for detailed comparison metrics.
 
 ---
 
-## File-by-file usage map
+## Method Details
 
-## Core comparison flow (active)
+### **Paper Baseline** (`methods/baseline/`)
+- **SFRNNR Model**: Fuzzy neural network with adaptive threshold
+- **FRLFP Routing**: Excludes risky nodes based on predicted failures
+- **9 Factors**: Distance, LET, ND, RSSI, LS, LA, LQ_mean, LL_d, T_hello
 
-- `simulations/paper_frlfp_simulation.cc`
-  - Standalone paper-style NS-3 simulation logic.
-- `scripts/run_paper_simulations.sh`
-  - Runs paper simulation seeds and writes raw logs to `dataset/paper/raw/`.
-- `scripts/paper_build_dataset.py`
-  - Builds `dataset/paper/processed/paper_raw_dataset.csv` from NS-3 CSV/XML outputs.
-- `scripts/paper_feature_engineering.py`
-  - Computes paper-inspired factors and our model features in one shared table.
-- `scripts/paper_compute_lfp.py`
-  - Adds supervised labels, runs **SFRNNR** (trains `models/sfrnnr_paper.keras` if missing), writes `lfp`, `lfp_threshold`, and `paper_predicted_failure`.
-- `experiments/train_sfrnnr_paper.py`
-  - Standalone trainer for the paper SFRNNR (same outputs as above).
-- `baseline_paper/sfrnnr_model.py`
-  - Layered SFRNNR Keras model (fuzzification, fuzzy RNN, normalization, consequent, summation, threshold head).
-- `baseline_paper/sfrnnr_infer.py`
-  - Batch inference over node--time sequences.
-- `baseline_paper/threshold_model.py`
-  - Teacher signal for the threshold head during SFRNNR training only.
-- `baseline_paper/frlfp_router.py`
-  - Paper baseline routing behavior.
-- `experiments/training.py`
-  - Trains RF/XGB model (our model). Use `--dataset` for shared paper dataset.
-- `experiments/compare_all_models.py`
-  - Unified evaluator that:
-    - rebuilds paper datasets,
-    - trains our model on shared dataset,
-    - evaluates both methods on the same sampled pairs,
-    - writes result tables.
-- `src/predict.py`
-  - Loads trained RF/XGB artifacts.
-- `src/routing_from_dataset.py`
-  - Graph creation + route metrics for our method.
+### **Our Enhancement** (`methods/ours/`)
+- **RF + XGBoost**: Ensemble failure prediction
+- **Reliability-Weighted Routing**: Uses predicted link reliability
+- **14 Features**: Network topology + temporal patterns
 
-## Legacy/original pipeline (not used in strict paper comparison)
-
-- `simulations/manet_simulation.cc`
-- `scripts/run_simulations.sh`
-- `scripts/build_dataset.py`
-- `scripts/add_failure_label.py`
-- `scripts/feature_engineering.py`
-- `experiments/evaluate_routing.py`
-- `experiments/evaluate_ours.py`
-- `experiments/evaluate_paper_baseline.py`
-- `experiments/evaluate_classic_baseline.py`
-
-These are kept for backward compatibility and debugging, but `compare_all_models.py` is now the authoritative comparison path.
-
-## Visualization/utility scripts (manual)
-
-- `src/routing_animation.py`
-  - Optional animation; not called by unified comparison script.
-- `src/routing_dijkstra.py`
-  - Standalone demo; not required for comparison.
+### **Classic Baseline**
+- **Shortest-Path**: Traditional hop-count based routing
 
 ---
 
-## Folder structure (current expected)
+## Fair Comparison Protocol
 
-```text
-Intelligent-MANET-Routing/
-├── baseline_paper/
-├── configs/
-├── dataset/
-│   └── paper/
-│       ├── raw/
-│       └── processed/
-├── docs/
-├── experiments/
-├── models/
-├── results/
-├── scripts/
-├── simulations/
-└── src/
-```
-
-This layout is correct for the current workflow.
+- Same NS-3 simulation seeds for all methods
+- Identical train/test splits by run_id
+- Same source-destination pairs per evaluation
+- Unified communication radius settings
 
 ---
 
 ## Setup
 
 ### Prerequisites
-
-- Python 3.11 recommended
+- Python 3.11+ 
 - NS-3 (for simulation generation)
 
-### Install
-
+### Installation
 ```bash
+# Create virtual environment
 python3.11 -m venv venv
 source venv/bin/activate
+
+# Install dependencies
 pip install -r requirements.txt
 ```
+
+---
+
+## Folder Structure (Clean & Organized)
+
+```text
+Intelligent-MANET-Routing/
+|-- methods/           # Core method implementations
+|   |-- baseline/       # Paper SFRNNR + FRLFP
+|   `-- ours/          # Our RF+XGBoost enhancement
+|
+|-- data/              # All datasets in one place
+|   |-- raw/           # NS-3 simulation outputs
+|   `-- processed/     # Ready-to-use datasets
+|
+|-- simulation/        # NS-3 simulation setup
+|-- pipeline/          # Data processing & training
+|-- results/           # Models, comparisons, figures
+|-- config/            # Configuration files
+|-- legacy/            # Old implementation (archived)
+`-- docs/              # Documentation
+```
+
+---
+
+## Key Differences from Original Project
+
+**Before**: Confusing structure with files scattered across multiple folders
+**After**: Clean separation by purpose - methods, data, pipeline, results
+
+**Before**: Legacy files mixed with active code
+**After**: Legacy isolated, active code clearly organized
+
+**Before**: Unclear what belongs to baseline vs our method
+**After**: Explicit `methods/baseline/` vs `methods/ours/` folders
 
 ---
 
