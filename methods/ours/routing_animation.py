@@ -13,18 +13,14 @@ from routing_from_dataset import DatasetRouter
 
 class MANETAnimation:
     def __init__(self, dataset_path, start_time=10.0, run_id=None, pair_change_every=10, min_hops=3, random_seed=42):
-        print("Loading dataset...")
         self.df = pd.read_csv(dataset_path)
 
-        print("Loading ML predictor...")
-        self.router = DatasetRouter()  # use DatasetRouter instead of raw predictor
+        self.router = DatasetRouter()
 
         self.random = random.Random(int(random_seed))
         self.pair_change_every = int(pair_change_every)
         self.min_hops = int(min_hops)
 
-        # IMPORTANT: the dataset contains multiple runs. Animation must use exactly one run,
-        # otherwise node_id repeats across runs and you get self-loops + nonsensical motion.
         all_runs = sorted(self.df["run_id"].dropna().unique().astype(int).tolist()) if "run_id" in self.df.columns else []
         if run_id is None:
             self.run_id = int(all_runs[0]) if all_runs else None
@@ -33,31 +29,26 @@ class MANETAnimation:
 
         if self.run_id is not None and "run_id" in self.df.columns:
             self.df = self.df[self.df["run_id"] == self.run_id].copy()
-            print(f"Using run_id={self.run_id} for animation.")
-
+            
         all_times = sorted(self.df["time"].unique())
         self.times = [t for t in all_times if t >= float(start_time)]
 
         if not self.times:
-            print("Warning: No data found after start_time. Using all data.")
-            self.times = all_times
+                        self.times = all_times
 
         self.ml_scores = []
         self.baseline_scores = []
         self.time_points = []
 
-        # Current routing pair (changes over time)
         self.source = None
         self.target = None
 
-        # Skip initial clustered timesteps if needed (quick safety net for mobility warm-up artifacts).
         self._apply_cluster_skip(std_threshold=50.0)
 
     def _choose_source_target(self):
         raise NotImplementedError("Use `_pick_pair_for_snapshot` (dynamic per timestep).")
 
     def _apply_cluster_skip(self, std_threshold: float = 50.0):
-        """Option B safety net: skip times where nodes are still clustered near origin."""
         kept = []
         for t in self.times:
             snap = self.df[self.df["time"] == t]
@@ -67,7 +58,6 @@ class MANETAnimation:
                 kept.append(t)
         if kept and len(kept) != len(self.times):
             first = float(kept[0])
-            print(f"Skipping clustered warm-up frames. Starting at t={first:.1f}s (std(x)>{std_threshold}).")
             self.times = kept
 
     def _pick_pair_for_snapshot(self, G: nx.Graph):

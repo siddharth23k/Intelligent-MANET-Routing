@@ -1,36 +1,19 @@
-# Python virtual environment
 venv/
 env/
-
-# Python cache and compiled bytecode
 __pycache__/
 *.pyc
 *.pyo
 *.pyd
-
-# Jupyter Notebook checkpoints
 .ipynb_checkpoints/
-
-# Packet capture files
 *.pcap
-
-# macOS system file
 .DS_Store
-
-# Generated XML datasets
 dataset/*.xml
 dataset/*.csv
 !dataset/.gitkeep 
-
-# Models (Machine Learning)
 *.pkl
 *.keras
 *.h5
 *.joblib
-
-# Logs
 *.log
-
-#datasets
 dataset/paper/processed/*.csv
 *.csv

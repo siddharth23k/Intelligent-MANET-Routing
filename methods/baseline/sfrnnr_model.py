@@ -7,7 +7,6 @@ from tensorflow.keras import layers
 
 _serializable = tf.keras.utils.register_keras_serializable
 
-# Same nine factors as the legacy weighted-LFP baseline
 FACTOR_COLS = [
     "d_res",
     "LET",
@@ -21,13 +20,11 @@ FACTOR_COLS = [
 ]
 
 N_FACTORS = len(FACTOR_COLS)
-# Default membership count
 N_MFS = 2
 
 
 @_serializable(package="SFRNNR")
 class FuzzificationLayer(layers.Layer):
-    """Gaussian fuzzification: each scalar maps to N_MFS membership degrees."""
 
     def __init__(self, n_inputs: int = N_FACTORS, n_mfs: int = N_MFS, **kwargs):
         super().__init__(**kwargs)
@@ -67,7 +64,6 @@ class FuzzificationLayer(layers.Layer):
 
 @_serializable(package="SFRNNR")
 class ThresholdScale(layers.Layer):
-    """Maps sigmoid output to [0.2, 0.8]."""
 
     def call(self, inputs):
         return 0.2 + 0.6 * inputs
@@ -116,6 +112,7 @@ def build_sfrnnr_model(
             "lfp_threshold": keras.losses.MeanSquaredError(),
         },
         loss_weights={"lfp": 1.0, "lfp_threshold": 0.25},
+        metrics={"lfp": "auc"},
     )
     return model
 

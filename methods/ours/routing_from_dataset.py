@@ -9,15 +9,13 @@ from pathlib import Path
 sys.path.append(str(Path(__file__).resolve().parent))
 from predict import LinkFailurePredictor
 
-# Simulation config
 AREA_CENTER_X = 250.0  
 AREA_CENTER_Y = 250.0
 DEFAULT_RADIUS = 150.0
 
 class DatasetRouter:
     def __init__(self):
-        print("Initializing DatasetRouter...")
-        self.predictor = LinkFailurePredictor()
+                self.predictor = LinkFailurePredictor()
 
     def _compute_node_features(self, snapshot):
         node_features = {}

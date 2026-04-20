@@ -66,8 +66,7 @@ def main():
 
     out = pd.DataFrame(rec)
     out.to_csv(OUTPUT_PATH, index=False)
-    print(f"Saved {OUTPUT_PATH} ({len(out)} rows)")
-
+    
 
 if __name__ == "__main__":
     main()

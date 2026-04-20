@@ -102,8 +102,7 @@ def main():
 
     out = os.path.join(PAPER_PROC_DIR, "paper_raw_dataset.csv")
     pd.DataFrame(rows).to_csv(out, index=False)
-    print(f"Saved {out} ({len(rows)} rows)")
-
+    
 
 if __name__ == "__main__":
     main()

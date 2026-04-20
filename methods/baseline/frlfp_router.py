@@ -3,12 +3,6 @@ import networkx as nx
 
 
 class FRLFPRouter:
-    """
-    Paper-inspired router:
-    - marks nodes as risky if lfp > threshold
-    - excludes risky nodes when possible
-    - routes on shortest path in filtered graph
-    """
 
     def build_graphs(self, snapshot, radius=150.0):
         rows = snapshot.to_dict("records")

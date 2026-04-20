@@ -32,16 +32,11 @@ if [[ ! -d "$NS3_DIR" ]]; then
   exit 1
 fi
 
-echo "Repo root: $REPO_ROOT"
-echo "Using ns-3 at: $NS3_DIR"
-echo "Paper dataset output: $DATA_DIR"
 
 cp "$SIM_SRC" "$NS3_DIR/scratch/paper_frlfp_simulation.cc"
 
 for seed in $(seq 1 "$NUM_RUNS"); do
-  echo "Running paper-style simulation seed=$seed"
-  cd "$NS3_DIR"
+    cd "$NS3_DIR"
   ./ns3 run "scratch/paper_frlfp_simulation --RngRun=$seed --runId=$seed --outDir=$DATA_DIR --commRadius=$COMM_RADIUS --numNodes=$NUM_NODES --simTimeSeconds=$SIM_TIME --area=$AREA_SIZE --speedMin=$SPEED_MIN --speedMax=$SPEED_MAX --pause=$PAUSE --packetSize=$PACKET_SIZE --maxPackets=$MAX_PACKETS --interval=$PKT_INTERVAL --cbrConnections=$CBR_CONNECTIONS"
 done
 
-echo "Paper-style simulations complete."

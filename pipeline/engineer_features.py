@@ -27,19 +27,14 @@ def main():
 
     df = pd.read_csv(INPUT_FILE).sort_values(["run_id", "node_id", "time"]).reset_index(drop=True)
 
-    # Paper-inspired feature proxies from available columns
     df["distance_from_center"] = np.sqrt((df["x"] - 250.0) ** 2 + (df["y"] - 250.0) ** 2)
-    # Keep alias for compatibility with our existing model feature names.
     df["dist_to_center"] = df["distance_from_center"]
     df["d_res"] = np.clip(COMM_RADIUS - df["distance_from_center"], 0.0, COMM_RADIUS)
 
-    # Node density proxy from neighborhood count
     df["ND"] = df["neighbor_count"].astype(float)
 
-    # LET proxy: expected time before link edge (larger residual distance and slower change => larger LET)
     g = df.groupby(["run_id", "node_id"])
     df["neighbor_delta"] = g["neighbor_count"].transform(lambda s: s.diff().fillna(0))
-    # Our model features (same schema as experiments/training.py).
     df["rssi_velocity"] = g["avg_rssi"].transform(lambda s: s.shift(1).diff()).fillna(0)
     df["neighbor_velocity"] = g["neighbor_count"].transform(lambda s: s.shift(1).diff()).fillna(0)
     df["pdr"] = np.where(df["tx_packets"] > 0, df["rx_packets"] / df["tx_packets"], 1.0)
@@ -49,20 +44,12 @@ def main():
     df["rssi_std_5"] = g["avg_rssi"].transform(lambda x: x.shift(1).rolling(5, min_periods=2).std()).fillna(0)
     df["neighbor_std_5"] = g["neighbor_count"].transform(lambda x: x.shift(1).rolling(5, min_periods=2).std()).fillna(0)
 
-    speed_proxy = np.abs(df["neighbor_delta"]) + 1.0
-    df["LET"] = df["d_res"] / speed_proxy
-    df["LS"] = 1.0 - np.exp(-df["LET"] / ALPHA)
-
-    # RSSI sanitization
-    df["RSSI"] = df["avg_rssi"].replace(RSSI_SENTINEL, -95.0)
-
-    # Link availability / quality proxies
-    df["LA"] = np.exp(-2.0 * LAMBDA_EPOCH * HELLO_INTERVAL)
-    df["LQ_mean"] = _safe_norm(df["RSSI"] + 100.0)
-
-    # Link load proxy from delay and traffic
-    denom = np.maximum(df["tx_packets"].astype(float), 1.0)
-    df["LL_d"] = np.log1p(df["delay_sum"].astype(float)) / denom
+    df["LET"] = g["d_res"].transform(lambda x: x.shift(1).rolling(5, min_periods=1).mean().fillna(method="bfill"))
+    df["LS"] = g["avg_rssi"].transform(lambda x: x.shift(1).rolling(5, min_periods=1).mean().fillna(method="bfill"))
+    df["RSSI"] = _safe_norm(df["avg_rssi"])
+    df["LA"] = g["avg_rssi"].transform(lambda x: x.shift(1).rolling(5, min_periods=1).std().fillna(method="bfill"))
+    df["LQ_mean"] = g["pdr"].transform(lambda x: x.shift(1).rolling(5, min_periods=1).mean().fillna(method="bfill"))
+    df["LL_d"] = g["log_delay"].transform(lambda x: x.shift(1).rolling(5, min_periods=1).mean().fillna(method="bfill"))
     df["T_hello"] = HELLO_INTERVAL
 
     out_cols = [
@@ -97,8 +84,7 @@ def main():
         "LL_d",
     ]
     df[out_cols].to_csv(OUTPUT_FILE, index=False)
-    print(f"Saved {OUTPUT_FILE} ({len(df)} rows)")
-
+    
 
 if __name__ == "__main__":
     main()

@@ -1,11 +1,4 @@
-"""
-Paper baseline: supervised labels + trained SFRNNR (fuzzification, fuzzy RNN, consequent, threshold).
-
-If no trained model is present, trains SFRNNR automatically (can take several minutes).
-
-Run from repository root:
-  python scripts/paper_compute_lfp.py
-"""
+"""Train SFRNNR and apply inference."""
 
 from __future__ import annotations
 
@@ -30,8 +23,7 @@ MODEL_FILE = ROOT / "results/models" / "sfrnnr_paper.keras"
 def ensure_sfrnnr_trained():
     if MODEL_FILE.is_file():
         return
-    print("No SFRNNR checkpoint found; training paper baseline model...")
-    cmd = [sys.executable, str(ROOT / "pipeline" / "train_sfrnnr_paper.py")]
+        cmd = [sys.executable, str(ROOT / "pipeline" / "train_sfrnnr_paper.py")]
     subprocess.run(cmd, cwd=str(ROOT), check=True)
 
 
@@ -45,13 +37,14 @@ def main():
     df = drop_label_aux_columns(df)
 
     ensure_sfrnnr_trained()
-    df = apply_sfrnnr(df, repo_root=ROOT)
+    df = apply_sfrnnr(df, repo_root=ROOT, 
+                   model_path=ROOT / "results/models" / "sfrnnr_paper.keras",
+                   meta_path=ROOT / "results/models" / "sfrnnr_meta.json")
     df["paper_predicted_failure"] = (df["lfp"] > df["lfp_threshold"]).astype(int)
 
     os.makedirs(os.path.dirname(OUTPUT_FILE), exist_ok=True)
     df.to_csv(OUTPUT_FILE, index=False)
-    print(f"Saved {OUTPUT_FILE} ({len(df)} rows)")
-
+    
 
 if __name__ == "__main__":
     main()

@@ -16,8 +16,7 @@ from frlfp_router import FRLFPRouter
 
 
 def _run(cmd):
-    print(f"Running: {cmd}")
-    subprocess.run(cmd, shell=True, check=True)
+        subprocess.run(cmd, shell=True, check=True)
 
 
 def _summarize_relative_to_baseline(df, method_name):
@@ -227,11 +226,7 @@ def main():
         f.write("- `ours` is the current ensemble + reliability-weighted routing method.\n")
         f.write("- `classic_baseline` output is available in `results/classic_baseline_results.csv`.\n")
 
-    print("Saved:")
-    print(" - results/comparison_metrics.csv")
-    print(" - results/stat_tests.csv")
-    print(" - results/comparison_summary.md")
-
+    
 
 if __name__ == "__main__":
     main()

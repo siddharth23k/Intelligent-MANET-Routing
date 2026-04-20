@@ -1,9 +1,4 @@
-"""
-Standalone Dijkstra routing demo with ML link-reliability weights.
-
-This module is intentionally lightweight and script-runnable, but it is kept
-compatible with the project's current `LinkFailurePredictor` feature schema.
-"""
+"""Standalone Dijkstra routing with ML weights."""
 
 from __future__ import annotations
 
@@ -14,15 +9,11 @@ from typing import Dict, Iterable, List, Optional, Sequence, Tuple
 
 sys.path.append(str(Path(__file__).resolve().parent))
 
-# Some transitive dependencies (e.g. matplotlib/fontconfig pulled in by the ML stack)
-# try to write caches under $HOME. In restricted environments, that can hang imports.
-# Keep caches inside the repo by default (users can override by setting env vars).
 _project_root = Path(__file__).resolve().parent.parent
 _cache_root = _project_root / ".cache"
 try:
     _cache_root.mkdir(parents=True, exist_ok=True)
 except Exception:
-    # If even the workspace is unwritable, fall back to OS defaults.
     _cache_root = None
 
 if _cache_root is not None:
@@ -47,15 +38,12 @@ FEATURES: List[str] = [
 
 class MLWeightedDijkstra:
     """
-    Builds a graph with ML-derived edge weights and runs Dijkstra.
-
     Two supported build modes:
-    - `build_graph(nodes, edges)`: explicit edges with feature vectors
-    - `build_graph_from_snapshot(snapshot, radius=...)`: build edges from a dataset snapshot
+    - build_graph(nodes, edges): explicit edges with feature vectors
+    - build_graph_from_snapshot(snapshot, radius=...): build edges from a dataset snapshot
     """
 
     def __init__(self):
-        print("Initializing ML predictor...")
         self.predictor = LinkFailurePredictor()
         self._n_features = int(getattr(self.predictor.scaler, "n_features_in_", 0) or 0)
 
@@ -110,20 +98,13 @@ class MLWeightedDijkstra:
 
         for (u, v), r in zip(edge_pairs, reliabilities):
             r = float(np.clip(r, 0.001, 0.999))
-            # Same idea as in `routing_from_dataset.py`: additive cost over hops.
             weight = float(-np.log(r))
             G.add_edge(u, v, weight=weight, reliability=r)
 
         return G
 
     def build_graph_from_snapshot(self, snapshot, radius: float = 150.0):
-        """
-        Builds a graph from a dataset snapshot (rows for a single time step).
-
-        Expects the engineered feature columns produced by `scripts/feature_engineering.py`.
-        This mirrors `DatasetRouter.build_graph(...)` but returns only the ML graph.
-        """
-        # Local import: keep this file runnable even if pandas isn't installed in some contexts.
+        """Builds a graph from a dataset snapshot."""
         import pandas as pd  # type: ignore
 
         if not isinstance(snapshot, pd.DataFrame):
@@ -202,7 +183,6 @@ def _demo_from_dataset():
     if df.empty:
         raise RuntimeError("Dataset CSV is empty.")
 
-    # Pick the first time slice with at least a few valid (non-(0,0)) nodes.
     snapshot = None
     chosen_t = None
     for t in sorted(df["time"].unique()):
@@ -221,17 +201,13 @@ def _demo_from_dataset():
 
     src, dst = 0, 5
     path = router.find_path(G, src, dst)
-    print(f"Time={chosen_t:.1f}s, nodes={G.number_of_nodes()}, edges={G.number_of_edges()}")
-    print(f"ML-weighted Dijkstra path {src}->{dst}: {path}")
-
+    
 
 def _demo_toy_graph():
-    # Minimal toy graph: features must match the trained schema exactly.
     router = MLWeightedDijkstra()
 
     nodes = [0, 1, 2, 3, 4]
     edges = [
-        # Provide 14 features in the expected order; values here are illustrative.
         (0, 1, [3, 120, 200, 10, -70, 50, -0.2, -1, 0.9, 1.0, -0.1, -0.3, 2.0, 1.0]),
         (1, 2, [2, 200, 250, 10, -75, 60, -0.1, 0, 0.8, 1.2, -0.05, -0.1, 1.5, 1.2]),
         (0, 3, [1, 300, 100, 10, -85, 80, 0.0, -2, 0.7, 1.4, 0.02, 0.2, 3.0, 2.5]),
@@ -242,12 +218,11 @@ def _demo_toy_graph():
     G = router.build_graph(nodes, edges)
     path = router.find_path(G, 0, 2)
 
-    print("\nBest path based on ML reliability:")
-    print(path)
+    print(f"Best path based on ML reliability: {path}")
 
-    print("\nEdge reliabilities:")
+    print("Edge reliabilities:")
     for u, v, data in G.edges(data=True):
-        print(f"{u}-{v} reliability:", round(float(data.get("reliability", 0.0)), 3))
+        print(f"{u}-{v} reliability: {round(float(data.get('reliability', 0.0)), 3)}")
 
 
 if __name__ == "__main__":

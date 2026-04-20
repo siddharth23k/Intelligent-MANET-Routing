@@ -1,9 +1,4 @@
-"""
-Train the paper SFRNNR baseline (fuzzification + fuzzy RNN + consequent + threshold head).
-
-Run from repository root:
-  python pipeline/train_sfrnnr_paper.py --dataset data/processed/paper_featured_dataset.csv
-"""
+"""Train SFRNNR baseline."""
 
 from __future__ import annotations
 
@@ -44,7 +39,6 @@ def _minmax_global(s: pd.Series) -> pd.Series:
 
 
 def pad_sequences(items: list[tuple], max_len: int):
-    """items: list of (X [T, F], y [T], thr [T])"""
     Xs, ys, thrs, wts = [], [], [], []
     for X, y, thr in items:
         t = X.shape[0]
@@ -76,51 +70,41 @@ def main():
     np.random.seed(args.seed)
     tf.random.set_seed(args.seed)
 
-    print(f"Loading dataset from {args.dataset}")
     df = pd.read_csv(args.dataset).sort_values(["run_id", "node_id", "time"]).reset_index(drop=True)
     df = add_link_failure_labels(df)
     df = drop_label_aux_columns(df)
 
-    # Normalize factor columns globally
     for col in FACTOR_COLS:
         df[col] = _minmax_global(df[col])
 
-    # Prepare sequences by (run_id, node_id)
     sequences_with_runs = []
     for (run_id, node_id), group in df.groupby(["run_id", "node_id"]):
-        if len(group) < 3:  # Skip very short sequences
+        if len(group) < 3:
             continue
         X = group[FACTOR_COLS].values.astype(np.float32)
         y = group["link_failure"].values.astype(np.float32)
         
-        # Teacher threshold signal - use static method
         thr = np.array([AdaptiveThresholdModel.predict_threshold(row.to_dict()) 
                        for _, row in group.iterrows()]).astype(np.float32)
         
         sequences_with_runs.append((run_id, X, y, thr))
 
-    # Split by run_id
     run_ids = sorted(df["run_id"].unique())
-    train_runs = set(run_ids[:20])  # First 20 runs for training
-    test_runs = set(run_ids[20:])   # Remaining runs for testing
+    train_runs = set(run_ids[:20])
+    test_runs = set(run_ids[20:])
 
     train_sequences = [(X, y, thr) for run_id, X, y, thr in sequences_with_runs if run_id in train_runs]
     test_sequences = [(X, y, thr) for run_id, X, y, thr in sequences_with_runs if run_id in test_runs]
 
-    # Limit training sequences if requested
     if args.max_train_sequences > 0:
         train_sequences = train_sequences[:args.max_train_sequences]
 
-    print(f"Train sequences: {len(train_sequences)}, Test sequences: {len(test_sequences)}")
-
-    # Pad sequences
     max_len = max(max(len(seq[0]) for seq in train_sequences), 
                   max(len(seq[0]) for seq in test_sequences))
     
     X_train, y_train, thr_train, wts_train = pad_sequences(train_sequences, max_len)
     X_test, y_test, thr_test, wts_test = pad_sequences(test_sequences, max_len)
 
-    # Build model
     model = build_sfrnnr_model(
         gru_units=args.gru_units,
         rule_units=args.rule_units,
@@ -128,18 +112,6 @@ def main():
         seq_len=max_len,
         n_factors=N_FACTORS,
     )
-    
-    model.compile(
-        optimizer=keras.optimizers.Adam(learning_rate=1e-3),
-        loss={
-            "lfp": "binary_crossentropy",
-            "lfp_threshold": "mse",
-        },
-        loss_weights={"lfp": 1.0, "lfp_threshold": 0.1},
-        metrics={"lfp": "auc"},
-    )
-
-    print(f"Training SFRNNR for {args.epochs} epochs...")
     history = model.fit(
         X_train, {"lfp": y_train, "lfp_threshold": thr_train},
         sample_weight={"lfp": wts_train, "lfp_threshold": wts_train},
@@ -149,7 +121,6 @@ def main():
         verbose=2,
     )
 
-    # Save model and metadata
     model_path = ROOT / "results/models" / "sfrnnr_paper.keras"
     meta_path = ROOT / "results/models" / "sfrnnr_meta.json"
     
@@ -163,22 +134,19 @@ def main():
         "epochs": args.epochs,
         "batch_size": args.batch_size,
         "max_len": max_len,
+        "seq_len": max_len,
         "train_sequences": len(train_sequences),
         "test_sequences": len(test_sequences),
-        "train_runs": train_runs,
-        "test_runs": test_runs,
-        "final_train_auc": float(history.history["lfp_output_auc"][-1]),
-        "final_val_auc": float(history.history["val_lfp_output_auc"][-1]),
+        "train_runs": list(train_runs),
+        "test_runs": list(test_runs),
+        "final_train_auc": float(history.history["lfp_auc"][-1]),
+        "final_val_auc": float(history.history["val_lfp_auc"][-1]),
     }
     
     with open(meta_path, "w") as f:
         json.dump(metadata, f, indent=2)
     
-    print(f"Model saved to {model_path}")
-    print(f"Metadata saved to {meta_path}")
-    print(f"Final train AUC: {metadata['final_train_auc']:.4f}")
-    print(f"Final val AUC: {metadata['final_val_auc']:.4f}")
-
+    
 
 if __name__ == "__main__":
     main()

@@ -2,15 +2,9 @@ import numpy as np
 
 
 class AdaptiveThresholdModel:
-    """
-    Closed-form adaptive threshold used as a teacher target when training the
-    SFRNNR threshold head (see experiments/train_sfrnnr_paper.py). Final routing
-    uses thresholds produced by the trained network in paper_lfp_dataset.csv.
-    """
 
     @staticmethod
     def predict_threshold(feature_row: dict) -> float:
-        # Inputs are expected normalized or near-normalized.
         lq = float(feature_row.get("LQ_mean", 0.5))
         rssi = float(feature_row.get("RSSI_norm", 0.5))
         ls = float(feature_row.get("LS_norm", 0.5))
@@ -29,7 +23,6 @@ class AdaptiveThresholdModel:
         ll_d: np.ndarray,
         nd: np.ndarray,
     ) -> np.ndarray:
-        """Vectorized teacher thresholds (same formula as predict_threshold)."""
         z = (
             1.8 * lq
             + 1.2 * rssi

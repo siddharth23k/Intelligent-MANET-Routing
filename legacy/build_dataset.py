@@ -7,11 +7,6 @@ DATASET_DIR = "dataset"
 dataset_rows = []
 
 def _node_id_from_ipv4(ip: str):
-    """
-    Maps NS-3 IPv4 addresses to node ids for the default addressing scheme used in the simulation:
-      10.1.1.(node_id + 1)
-    Returns None if the mapping can't be inferred.
-    """
     try:
         parts = ip.strip().split(".")
         if len(parts) != 4:
@@ -27,16 +22,9 @@ def _node_id_from_ipv4(ip: str):
 
 
 def _parse_flowmonitor_xml(xml_file: str):
-    """
-    Parse FlowMonitor XML and return per-node traffic aggregates.
-
-    We use FlowClassifier/FiveTuple mappings to associate each FlowStats entry with a
-    (source_node_id, dest_node_id) pair, then aggregate tx/rx/lost/delay at the node level.
-    """
     tree = ET.parse(xml_file)
     root = tree.getroot()
 
-    # flow_id -> (src_node_id, dst_node_id)
     flow_endpoints = {}
     for flow in root.findall(".//FlowClassifier/Flow"):
         flow_id = flow.attrib.get("flowId")
@@ -138,5 +126,3 @@ for pos_file in pos_files:
 df_final = pd.DataFrame(dataset_rows)
 output_path = os.path.join(DATASET_DIR, "manet_raw_dataset.csv") # Save as RAW first
 df_final.to_csv(output_path, index=False)
-
-print(f"Success! Master dataset saved: {output_path} ({len(df_final)} rows)")

@@ -23,40 +23,24 @@ np.random.seed(RANDOM_SEED)
 
 os.makedirs("assets", exist_ok=True)
 
-# 1. Initialise
-print("=" * 65)
-print("MANET Routing Evaluation — ML vs Hop-Count Baseline")
-print("=" * 65)
 
 router = DatasetRouter()
 
-print(f"\nLoading dataset: {DATASET_PATH}")
 df = pd.read_csv(DATASET_PATH)
 
 run_ids = sorted(df["run_id"].dropna().unique().astype(int).tolist())
 rng = random.Random(RANDOM_SEED)
 test_runs = sorted(rng.sample(run_ids, k=min(6, len(run_ids))))
-print(f"  Test runs (seed={RANDOM_SEED}): {test_runs}")
 
 test_df    = df[df["run_id"].isin(test_runs)].copy()
 all_times  = sorted(test_df["time"].unique())
 all_runs   = sorted(test_df["run_id"].unique())
 
-print(f"  Test runs      : {all_runs}")
-print(f"  Timesteps      : {len(all_times)} ({all_times[0]} → {all_times[-1]})")
-print(f"  Total test rows: {len(test_df)}")
-
-# 2. Evaluation loop
-print("\n" + "=" * 65)
-print("Running routing evaluation...")
-print("=" * 65)
-
-records = []   # one record per (run_id, time, pair_index)
+records = []
 
 for run_id in all_runs:
     run_df = test_df[test_df["run_id"] == run_id]
     times  = sorted(run_df["time"].unique())
-    print(f"\n  Run {run_id} — {len(times)} timesteps")
 
     for t in times:
         snapshot = run_df[run_df["time"] == t].copy().reset_index(drop=True)
@@ -107,24 +91,7 @@ for run_id in all_runs:
             })
             pairs_done += 1
 
-        print(f"    t={t:.1f}: {pairs_done} pairs evaluated, "
-              f"edges={G_ml.number_of_edges()}", end="\r")
-
-print(f"\n\nTotal routing decisions recorded: {len(records)}")
-
-if len(records) == 0:
-    print("\nERROR: No records collected.")
-    print("Likely causes:")
-    print("  1. predict.py still has a shape mismatch error (see logs above).")
-    print("  2. radius=250 is too small for the node density.")
-    sys.exit(1)
-
-results = pd.DataFrame(records)
-
-# 3. Aggregate metrics
-print("\n" + "=" * 65)
-print("Aggregate Results")
-print("=" * 65)
+        results = pd.DataFrame(records)
 
 ml_avg_rel   = results["ml_avg_reliability"].mean()
 base_avg_rel = results["base_avg_reliability"].mean()
@@ -136,24 +103,9 @@ base_hops    = results["base_hops"].mean()
 rel_improvement = (ml_avg_rel - base_avg_rel) / base_avg_rel * 100
 min_improvement = (ml_min_rel - base_min_rel) / base_min_rel * 100
 
-print(f"\n  {'Metric':<30} {'Baseline':>10} {'ML Routing':>12} {'Δ':>8}")
-print(f"  {'─'*30} {'─'*10} {'─'*12} {'─'*8}")
-print(f"  {'Avg Route Reliability':<30} {base_avg_rel:>10.4f} {ml_avg_rel:>12.4f} "
-      f"{rel_improvement:>+7.1f}%")
-print(f"  {'Min Link Reliability':<30} {base_min_rel:>10.4f} {ml_min_rel:>12.4f} "
-      f"{min_improvement:>+7.1f}%")
-print(f"  {'Avg Hop Count':<30} {base_hops:>10.4f} {ml_hops:>12.4f} "
-      f"{ml_hops - base_hops:>+8.2f}")
-
-# Statistical significance
 t_by_run = results.groupby("run_id")[["ml_avg_reliability", "base_avg_reliability"]].mean()
 t_stat, p_value = stats.ttest_rel(t_by_run["ml_avg_reliability"], t_by_run["base_avg_reliability"])
-print(f"\n  Paired t-test p-value (per-run means, N={len(t_by_run)}): {p_value:.6f}")
 
-# Per-run summary
-per_run = t_by_run.copy()
-per_run["improvement_%"] = ((per_run["ml_avg_reliability"] - per_run["base_avg_reliability"]) / per_run["base_avg_reliability"] * 100)
-print(per_run.round(4).to_string())
 
 # 4. Plots (Section unchanged but ensured output path exists)
 time_series = results.groupby("time").agg(
@@ -181,7 +133,4 @@ ax2.set_title("Per-Run Improvement (%)", fontweight="bold")
 
 plot_path = "assets/routing_evaluation.png"
 plt.savefig(plot_path, dpi=150, bbox_inches="tight")
-print(f"\n  Plots saved to {plot_path}")
-
 results.to_csv("dataset/routing_results.csv", index=False)
-print("  EVALUATION COMPLETE")
