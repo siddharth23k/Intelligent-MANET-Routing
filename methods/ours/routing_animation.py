@@ -308,7 +308,7 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Animate MANET routing over a featured dataset.")
     parser.add_argument(
         "--dataset",
-        default="dataset/paper/processed/paper_lfp_dataset.csv",
+        default="data/processed/paper_lfp_dataset.csv",
         help="Path to featured dataset CSV (default: shared paper dataset).",
     )
     parser.add_argument("--start-time", type=float, default=10.0, help="Starting time for animation.")

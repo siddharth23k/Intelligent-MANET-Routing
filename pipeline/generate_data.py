@@ -69,7 +69,7 @@ def main():
     xml_files = sorted(glob.glob(os.path.join(PAPER_RAW_DIR, "manet_flowmon_run*.xml")))
 
     if not pos_files:
-        raise FileNotFoundError("No position files found in dataset/paper/raw. Run scripts/run_paper_simulations.sh first.")
+        raise FileNotFoundError("No position files found in data/raw. Run simulation/run_simulation.sh first.")
 
     flow_by_run = {}
     for xmlf in xml_files:

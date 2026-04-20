@@ -1,14 +1,21 @@
 import os
+import sys
+from pathlib import Path
 
 import numpy as np
 import pandas as pd
+
+# Add config directory to path
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "config"))
+from config_loader import get_config
 
 INPUT_FILE = "data/processed/paper_raw_dataset.csv"
 OUTPUT_FILE = "data/processed/paper_featured_dataset.csv"
 
 RSSI_SENTINEL = -1000.0
-COMM_RADIUS = 150.0
-HELLO_INTERVAL = 1.0
+config = get_config()
+COMM_RADIUS = config.communication_radius_default
+HELLO_INTERVAL = config.hello_interval
 ALPHA = 10.0
 LAMBDA_EPOCH = 0.05
 
@@ -27,7 +34,7 @@ def main():
 
     df = pd.read_csv(INPUT_FILE).sort_values(["run_id", "node_id", "time"]).reset_index(drop=True)
 
-    df["distance_from_center"] = np.sqrt((df["x"] - 250.0) ** 2 + (df["y"] - 250.0) ** 2)
+    df["distance_from_center"] = np.sqrt((df["x"] - config.area_center) ** 2 + (df["y"] - config.area_center) ** 2)
     df["dist_to_center"] = df["distance_from_center"]
     df["d_res"] = np.clip(COMM_RADIUS - df["distance_from_center"], 0.0, COMM_RADIUS)
 

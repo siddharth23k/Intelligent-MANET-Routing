@@ -10,3 +10,4 @@ tqdm
 seaborn
 xgboost
 scipy
+PyYAML

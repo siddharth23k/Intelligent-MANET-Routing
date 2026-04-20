@@ -23,7 +23,7 @@ MODEL_FILE = ROOT / "results/models" / "sfrnnr_paper.keras"
 def ensure_sfrnnr_trained():
     if MODEL_FILE.is_file():
         return
-        cmd = [sys.executable, str(ROOT / "pipeline" / "train_sfrnnr_paper.py")]
+    cmd = [sys.executable, str(ROOT / "pipeline" / "train_sfrnnr_paper.py")]
     subprocess.run(cmd, cwd=str(ROOT), check=True)
 
 

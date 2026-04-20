@@ -46,12 +46,13 @@ python pipeline/engineer_features.py
 
 # 3) Train both models on the same data
 python pipeline/train_models.py
+python pipeline/train_sfrnnr_paper.py
 
 # 4) Compare all methods and get results
 python pipeline/compare_methods.py
 ```
 
-**Results**: Check `results/comparisons/` for detailed comparison metrics.
+**Results**: Check `results/` for detailed comparison metrics.
 
 ---
 
@@ -116,7 +117,6 @@ Intelligent-MANET-Routing/
 |-- results/           # Models, comparisons, figures
 |-- config/            # Configuration files
 |-- legacy/            # Old implementation (archived)
-`-- docs/              # Documentation
 ```
 
 ---

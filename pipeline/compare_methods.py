@@ -9,10 +9,16 @@ import numpy as np
 import pandas as pd
 from scipy import stats
 
+# Add config directory to path
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "config"))
+from config_loader import get_config
+
 sys.path.append(str(Path(__file__).resolve().parent.parent / "methods/ours"))
 sys.path.append(str(Path(__file__).resolve().parent.parent / "methods/baseline"))
 from routing_from_dataset import DatasetRouter
 from frlfp_router import FRLFPRouter
+
+config = get_config()
 
 
 def _run(cmd):
@@ -105,10 +111,10 @@ def main():
     # Unified evaluation loop on identical sampled decisions.
     df = pd.read_csv("data/processed/paper_lfp_dataset.csv")
     run_ids = sorted(df["run_id"].dropna().unique().astype(int).tolist())
-    seed = 42
-    radius = 150.0
-    pairs_per_step = 5
-    test_runs = sorted(random.Random(seed).sample(run_ids, k=min(6, len(run_ids))))
+    seed = config.random_seed
+    radius = config.communication_radius_default
+    pairs_per_step = config.pairs_per_step
+    test_runs = sorted(random.Random(seed).sample(run_ids, k=min(config.test_run_count, len(run_ids))))
     test = df[df["run_id"].isin(test_runs)].copy()
 
     ours_router = DatasetRouter()
