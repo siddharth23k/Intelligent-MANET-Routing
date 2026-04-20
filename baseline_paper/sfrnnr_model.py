@@ -1,18 +1,3 @@
-"""
-SFRNNR-style architecture for the paper baseline (Enhancing MANET Routing with ML-based LFP).
-
-Stack (paper terminology → implementation):
-  - Input factors: nine link-stability scalars (min–max normalized upstream).
-  - Fuzzification: Gaussian membership functions (trainable) — custom layer.
-  - Fuzzy logic RNN hidden layer: GRU over fuzzified membership features.
-  - Normalization: LayerNormalization on recurrent outputs.
-  - Consequent: dense rule-like mapping.
-  - Summation / defuzzification: Dense(1, sigmoid) → LFP in (0,1).
-  - Output threshold head: small MLP → threshold in [0.2, 0.8].
-
-Exact numeric match to the original paper is not guaranteed without their released code;
-this is a modular, trainable realization of the described pipeline.
-"""
 
 from __future__ import annotations
 
@@ -36,7 +21,7 @@ FACTOR_COLS = [
 ]
 
 N_FACTORS = len(FACTOR_COLS)
-# Default membership count (paper “fast” preset uses 2; full runs can pass n_mfs=3).
+# Default membership count
 N_MFS = 2
 
 
