@@ -110,14 +110,6 @@ Intelligent-MANET-Routing/
 |
 |-- data/              # All datasets in one place
 |   |-- raw/           # NS-3 simulation outputs
-|   `-- processed/     # Ready-to-use datasets
-|
-|-- simulation/        # NS-3 simulation setup
-|-- pipeline/          # Data processing & training
-|-- results/           # Models, comparisons, figures
-|-- config/            # Configuration files
-|-- legacy/            # Old implementation (archived)
-```
 
 ---
 
@@ -131,6 +123,17 @@ Intelligent-MANET-Routing/
 
 **Before**: Unclear what belongs to baseline vs our method
 **After**: Explicit `methods/baseline/` vs `methods/ours/` folders
+
+---
+
+## **Legacy Directory - DO NOT USE**
+
+**All files in `legacy/` are deprecated and non-functional.** They reference old paths (`dataset/` instead of `data/`) and missing directories (`src/`). 
+
+**Use the new structure instead:**
+- `pipeline/generate_data.py` instead of `legacy/build_dataset.py`
+- `pipeline/engineer_features.py` instead of `legacy/feature_engineering.py`  
+- `pipeline/compare_methods.py` instead of all `legacy/evaluate_*.py` files
 
 ---
 
