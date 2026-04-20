@@ -100,32 +100,6 @@ pip install -r requirements.txt
 
 ---
 
-## Folder Structure (Clean & Organized)
-
-```text
-Intelligent-MANET-Routing/
-|-- methods/           # Core method implementations
-|   |-- baseline/       # Paper SFRNNR + FRLFP
-|   `-- ours/          # Our RF+XGBoost enhancement
-|
-|-- data/              # All datasets in one place
-|   |-- raw/           # NS-3 simulation outputs
-```
----
-
-## Key Differences from Original Project
-
-**Before**: Confusing structure with files scattered across multiple folders
-**After**: Clean separation by purpose - methods, data, pipeline, results
-
-**Before**: Legacy files mixed with active code
-**After**: Legacy isolated, active code clearly organized
-
-**Before**: Unclear what belongs to baseline vs our method
-**After**: Explicit `methods/baseline/` vs `methods/ours/` folders
-
----
-
 ## **Legacy Directory - DO NOT USE**
 
 **All files in `legacy/` are deprecated and non-functional.** They reference old paths (`dataset/` instead of `data/`) and missing directories (`src/`). 
