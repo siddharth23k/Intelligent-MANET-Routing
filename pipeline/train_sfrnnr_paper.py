@@ -79,6 +79,9 @@ def build_sequences(df: pd.DataFrame, seq_len: int):
     return np.stack(windows), np.stack(labels), np.stack(thresholds), np.asarray(runs, dtype=int)
 
 
+AUC_SAMPLE_LIMIT = 512
+
+
 class TrainingHistory:
     """Minimal stand in for a Keras History object."""
 
@@ -150,6 +153,17 @@ def train_with_loop(
     history = TrainingHistory()
     batches = max(1, len(X_train) // batch_size)
 
+    # Training AUC is a progress signal, not a selection criterion, so it is
+    # measured on a fixed subsample. Early stopping uses validation AUC, which
+    # is always computed on the full validation set.
+    auc_sample = np.sort(
+        rng.choice(len(X_train), size=min(len(X_train), AUC_SAMPLE_LIMIT), replace=False)
+    )
+
+    if verbose:
+        print(f"[train_sfrnnr] starting first batch (shape {X_train[:batch_size].shape})",
+              flush=True)
+
     best_auc, best_weights, since_best = -np.inf, None, 0
     for epoch in range(epochs):
         started = time.perf_counter()
@@ -165,7 +179,7 @@ def train_with_loop(
                 print(f"[train_sfrnnr]   batch {index + 1}/{batches} "
                       f"loss={losses[-1]:.4f} ({time.perf_counter() - started:.1f}s)", flush=True)
 
-        train_auc = _auc(y_train, predict_lfp(model, X_train, batch_size))
+        train_auc = _auc(y_train[auc_sample], predict_lfp(model, X_train[auc_sample], batch_size))
         val_auc = float("nan")
         if len(X_val):
             val_auc = _auc(y_val, predict_lfp(model, X_val, batch_size))
@@ -286,7 +300,10 @@ def main() -> None:
     df = stats.transform(df, FACTOR_COLS)
 
     shortest_track = int(df.groupby(["run_id", "node_id"]).size().min())
-    seq_len = args.seq_len or (int(smoke_cfg["sfrnnr_seq_len"]) if smoke else shortest_track)
+    configured_seq_len = int(
+        smoke_cfg["sfrnnr_seq_len"] if smoke else training["sfrnnr_seq_len"]
+    )
+    seq_len = args.seq_len or configured_seq_len
     seq_len = max(3, min(int(seq_len), shortest_track))
 
     X, y, thresholds, runs = build_sequences(df, seq_len)
@@ -310,7 +327,12 @@ def main() -> None:
     print(f"[train_sfrnnr] seq_len={seq_len} train_seq={len(train_idx)} "
           f"val_seq={len(val_idx)} of {len(runs)} total", flush=True)
 
-    run_eagerly = smoke if args.run_eagerly is None else bool(args.run_eagerly)
+    # Eager by default. The model has ~2k parameters, and the explicit loop
+    # already feeds a single fixed batch shape, so graph mode's main advantage
+    # is gone. Tracing a several hundred step recurrent graph has been observed
+    # to stall on some TensorFlow builds, and correctness beats a speedup on a
+    # model this small. Opt into graph mode with --no-run-eagerly.
+    run_eagerly = True if args.run_eagerly is None else bool(args.run_eagerly)
     model = build_sfrnnr_model(
         seq_len=seq_len,
         n_factors=N_FACTORS,

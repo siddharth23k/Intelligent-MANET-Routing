@@ -1,0 +1,54 @@
+{
+  "output": "/Users/siddh/Desktop/SID/projects/Intelligent-MANET-Routing/data/processed/paper_raw_dataset.csv",
+  "rows": 18000,
+  "runs": [
+    1,
+    2,
+    3,
+    4,
+    5,
+    6
+  ],
+  "nodes_per_run": 100,
+  "timesteps_per_run": 30,
+  "traffic_granularity": "run_aggregate",
+  "traffic_is_causal": false,
+  "flowmonitor_diagnostics": {
+    "1": {
+      "classifier_flows": 67,
+      "stat_flows": 67,
+      "matched_flows": 67,
+      "nodes_with_traffic": 32
+    },
+    "2": {
+      "classifier_flows": 51,
+      "stat_flows": 51,
+      "matched_flows": 51,
+      "nodes_with_traffic": 27
+    },
+    "3": {
+      "classifier_flows": 98,
+      "stat_flows": 98,
+      "matched_flows": 98,
+      "nodes_with_traffic": 41
+    },
+    "4": {
+      "classifier_flows": 94,
+      "stat_flows": 94,
+      "matched_flows": 94,
+      "nodes_with_traffic": 35
+    },
+    "5": {
+      "classifier_flows": 108,
+      "stat_flows": 108,
+      "matched_flows": 108,
+      "nodes_with_traffic": 43
+    },
+    "6": {
+      "classifier_flows": 78,
+      "stat_flows": 78,
+      "matched_flows": 78,
+      "nodes_with_traffic": 35
+    }
+  }
+}

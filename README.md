@@ -205,6 +205,14 @@ The predictor artifact tests skip when nothing has been trained yet, so run
 
 ## Troubleshooting
 
+**Stage 5 is slow or stalls on the full dataset.** The recurrent baseline runs
+eagerly by default and uses a 60 step context window, not the whole 300 step
+track. The label horizon is 5 steps, so 60 is already twelve times the horizon,
+and a 300 step window costs five times as much per batch for context the model
+cannot use. Graph mode is available with `--no-run-eagerly` and is much faster
+per batch, but tracing a several hundred step recurrent graph stalls on some
+builds. Change the window with `--seq-len`.
+
 **Stage 5 stalls.** Nothing in the SFRNNR path calls `model.fit` or
 `model.predict`. Both build a `tf.data` pipeline even for a plain numpy array,
 and that adapter is the component that deadlocks on some TensorFlow builds.
@@ -224,9 +232,22 @@ never prints its time is the one that hangs. `make diagnose` also probes the
 `fit` paths the pipeline no longer uses, so a stall there is informative rather
 than blocking.
 
-**Stage 3 fails on traffic features.** Either rerun the simulation with
-`--logFlowStats` (the default) so the per second counters exist, or pass
-`--allow-run-level-traffic` to acknowledge the limitation.
+**Stage 3 fails on traffic features.** Your `data/raw` has no
+`flowstats_run*.csv`, so `pdr` and `log_delay` came from end of run aggregates
+and are not causal at time `t`. Either rerun the simulation with
+`--logFlowStats` (the default), or accept the limitation with
+`make all VALIDATE_FLAGS=--allow-run-level-traffic`.
+
+**NS-3 fails to build with `No rule to make target '.../libxml2.tbd'`.** Not a
+project problem. NS-3's CMake cache holds absolute paths into an Xcode SDK that
+has since been replaced. Reconfigure from scratch:
+
+```bash
+cd ~/ns-3.47
+rm -rf cmake-cache build
+./ns3 configure --build-profile=optimized --disable-examples --disable-tests
+./ns3 build
+```
 
 **`ArtifactError` on load.** The saved models and the code have drifted. Retrain
 with `python pipeline/train_predictor.py`.

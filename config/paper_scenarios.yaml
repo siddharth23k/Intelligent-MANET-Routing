@@ -47,6 +47,11 @@ training:
   sfrnnr_rule_units: 8
   sfrnnr_n_mfs: 2
   sfrnnr_batch_size: 64
+  # Context window for the recurrent baseline. The label horizon is 5 steps, so
+  # 60 is already twelve times the horizon; using the whole 300 step track costs
+  # five times as much per batch for context the model cannot use. Override with
+  # --seq-len.
+  sfrnnr_seq_len: 60
 
 smoke:
   # Used by --smoke everywhere. Sized to prove the chain executes, not to

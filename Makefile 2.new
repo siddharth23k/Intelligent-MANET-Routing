@@ -1,10 +1,5 @@
 PYTHON ?= python3
 
-# Extra flags for stage 3. Pass --allow-run-level-traffic when the raw data
-# predates per second FlowMonitor logging:
-#   make all VALIDATE_FLAGS=--allow-run-level-traffic
-VALIDATE_FLAGS ?=
-
 .PHONY: help smoke test lint diagnose data features validate train baseline compare all clean
 
 help:
@@ -21,8 +16,6 @@ help:
 	@echo "  make compare   6  three way comparison"
 	@echo ""
 	@echo "make diagnose  time each TensorFlow component, to find a slow stage"
-	@echo ""
-	@echo "VALIDATE_FLAGS=--allow-run-level-traffic  accept end of run traffic stats"
 	@echo "make clean     remove generated datasets, models and results"
 
 smoke:
@@ -44,7 +37,7 @@ features:
 	$(PYTHON) pipeline/engineer_features.py
 
 validate:
-	$(PYTHON) pipeline/validate_dataset.py $(VALIDATE_FLAGS)
+	$(PYTHON) pipeline/validate_dataset.py
 
 train:
 	$(PYTHON) pipeline/train_predictor.py
