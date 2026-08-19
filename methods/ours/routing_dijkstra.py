@@ -1,19 +1,16 @@
 """Reliability weighted Dijkstra with explicit per edge feature vectors.
 
-This is the API to use when per link features are actually available, for
-example if the simulation is re instrumented to log neighbour lists rather than
-neighbour counts. It shares graph construction and the weighting rule with
-routing_from_dataset via graph_build, so the two cannot disagree about what an
-edge weight means. Previously this module averaged the two endpoints' feature
-vectors while the module on the evaluation path took the weaker endpoint, and
-nothing recorded which one produced the published numbers.
+Use this when per link features are genuinely available, for example after the
+simulation is re instrumented to log neighbour lists rather than counts. It
+shares graph construction and the weighting rule with routing_from_dataset, so
+the two cannot disagree about what an edge weight means.
 """
 
 from __future__ import annotations
 
 import sys
 from pathlib import Path
-from typing import Dict, Iterable, List, Optional, Sequence, Tuple
+from typing import Iterable, List, Optional, Sequence, Tuple
 
 import networkx as nx
 import numpy as np
@@ -24,11 +21,7 @@ from bootstrap import setup_paths  # noqa: E402
 setup_paths()
 
 from config_loader import get_config  # noqa: E402
-from graph_build import (  # noqa: E402
-    build_snapshot_graphs,
-    clip_reliability,
-    reliability_to_weight,
-)
+from graph_build import build_snapshot_graphs, clip_reliability, reliability_to_weight  # noqa: E402
 from predict import LinkFailurePredictor  # noqa: E402
 from schema import FEATURES, assert_matrix_shape  # noqa: E402
 
@@ -39,43 +32,41 @@ EdgeWithFeatures = Tuple[NodeId, NodeId, Sequence[float]]
 
 
 class MLWeightedDijkstra:
-    """Two build modes:
-
-    build_graph(nodes, edges)            explicit per edge feature vectors
-    build_graph_from_snapshot(snapshot)  node level features, weaker endpoint wins
-    """
+    """Two build modes: explicit edge features, or a dataset snapshot."""
 
     def __init__(self, predictor: Optional[LinkFailurePredictor] = None):
         self.predictor = predictor or LinkFailurePredictor()
         self.n_features = self.predictor.n_features
         if self.n_features != len(FEATURES):
             raise RuntimeError(
-                f"model expects {self.n_features} features but schema declares "
-                f"{len(FEATURES)}. Retrain with pipeline/train_predictor.py."
+                f"model expects {self.n_features} features, schema declares {len(FEATURES)}. "
+                "Retrain with pipeline/train_predictor.py."
             )
 
     def build_graph(self, nodes: Iterable[NodeId], edges: Iterable[EdgeWithFeatures]) -> nx.Graph:
-        g = nx.Graph()
-        for n in nodes:
-            g.add_node(int(n))
+        graph = nx.Graph()
+        for node in nodes:
+            graph.add_node(int(node))
 
         pairs: List[Tuple[NodeId, NodeId]] = []
-        feats: List[np.ndarray] = []
-        for u, v, f in edges:
+        features: List[np.ndarray] = []
+        for u, v, feature_vector in edges:
             pairs.append((int(u), int(v)))
-            feats.append(np.asarray(f, dtype=float).reshape(1, -1))
+            features.append(np.asarray(feature_vector, dtype=float).reshape(1, -1))
 
         if not pairs:
-            return g
+            return graph
 
-        X = assert_matrix_shape(np.vstack(feats), self.n_features, "MLWeightedDijkstra.build_graph")
-        reliability, _ = self.predictor.predict(X)
-        for (u, v), r in zip(pairs, reliability):
-            r = float(clip_reliability(r))
-            g.add_edge(u, v, weight=float(reliability_to_weight(r)), reliability=r)
-        return g
+        X = assert_matrix_shape(np.vstack(features), self.n_features, "build_graph")
+        reliabilities, _ = self.predictor.predict(X)
+        for (u, v), reliability in zip(pairs, reliabilities):
+            reliability = float(clip_reliability(reliability))
+            graph.add_edge(
+                u, v, weight=float(reliability_to_weight(reliability)), reliability=reliability
+            )
+        return graph
 
-    def build_graph_from_snapshot(self, snapshot, radius: float = None):
+    def build_graph_from_snapshot(self, snapshot, radius: float | None = None):
         radius = CFG.communication_radius_default if radius is None else radius
         from routing_from_dataset import DatasetRouter  # local import avoids a cycle
 
@@ -83,17 +74,16 @@ class MLWeightedDijkstra:
         graphs = build_snapshot_graphs(snapshot, router.node_reliabilities(snapshot), radius)
         return graphs.ml, graphs.positions
 
-    def find_path(self, g: nx.Graph, source: NodeId, target: NodeId) -> Optional[List[NodeId]]:
+    def find_path(self, graph: nx.Graph, source: NodeId, target: NodeId) -> Optional[List[NodeId]]:
         try:
-            return nx.shortest_path(g, int(source), int(target), weight="weight")
+            return nx.shortest_path(graph, int(source), int(target), weight="weight")
         except (nx.NetworkXNoPath, nx.NodeNotFound):
             return None
 
 
 def _demo() -> None:
-    """Small runnable example, so the module is not dead code with a stale path."""
+    """Runnable example, so this module is not dead code with a stale path."""
     router = MLWeightedDijkstra()
-    nodes = [0, 1, 2, 3, 4]
     rng = np.random.default_rng(0)
     edges = [
         (0, 1, rng.normal(size=len(FEATURES))),
@@ -102,10 +92,10 @@ def _demo() -> None:
         (3, 4, rng.normal(size=len(FEATURES))),
         (4, 2, rng.normal(size=len(FEATURES))),
     ]
-    g = router.build_graph(nodes, edges)
-    print("path 0 -> 2:", router.find_path(g, 0, 2))
-    for u, v, d in g.edges(data=True):
-        print(f"  {u}-{v} reliability {d['reliability']:.3f} weight {d['weight']:.3f}")
+    graph = router.build_graph([0, 1, 2, 3, 4], edges)
+    print("path 0 -> 2:", router.find_path(graph, 0, 2))
+    for u, v, data in graph.edges(data=True):
+        print(f"  {u}-{v} reliability {data['reliability']:.3f} weight {data['weight']:.3f}")
 
 
 if __name__ == "__main__":

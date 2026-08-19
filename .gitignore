@@ -1,36 +1,47 @@
+# Python
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.ipynb_checkpoints/
 venv/
 env/
-__pycache__/
-*.pyc
-*.pyo
-*.pyd
-.ipynb_checkpoints/
-.pytest_cache/
-.cache/
+
+# OS and editors
 .DS_Store
+.idea/
+.vscode/
+
+# Logs and capture files
 *.log
 *.pcap
 
-# Raw NS-3 output and derived datasets are large and reproducible from the
-# simulation, so they are not tracked.
+# Raw NS-3 output and derived datasets: large, and reproducible from
+# simulation/run_simulation.sh plus the pipeline.
 data/raw/*.xml
 data/raw/*.csv
 data/processed/*.csv
+data/processed/dataset_manifest.json
 
-# Model artifacts are reproducible from pipeline/train_predictor.py and
+# Model artifacts: reproducible from pipeline/train_predictor.py and
 # pipeline/train_sfrnnr_paper.py. Tracking them is what let the code and the
-# shipped models drift apart in the first place.
+# shipped models drift apart.
 *.pkl
 *.keras
 *.h5
 *.joblib
 
-# Small provenance files are tracked on purpose: they record exactly which
-# split and which statistics produced the current results.
+# Generated results. results/smoke/ is committed on purpose so the output
+# format is visible without running anything.
+/results/*.csv
+/results/*.json
+/results/comparison_summary.md
+
+# Provenance files are small and tracked deliberately: they record which split
+# and which statistics produced the current artifacts.
 !results/models/predictor_schema.json
 !results/models/sfrnnr_meta.json
 !results/models/feature_norm_stats.json
 !results/models/run_split.json
 
-# Files retired by a cleanup, kept out of the way for manual deletion.
+# Scratch space for files retired by a cleanup.
 _to_delete/

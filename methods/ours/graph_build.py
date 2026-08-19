@@ -1,16 +1,9 @@
-"""The one place a routing graph is built from a dataset snapshot.
+"""Snapshot graph construction, shared by every router.
 
-There used to be two implementations with different semantics. One averaged the
-two endpoints' feature vectors and predicted once per edge, the other predicted
-per node and took the weaker endpoint. Only one was on the evaluation path, and
-nothing said which. Both routers now call into this module, so they cannot
-disagree.
-
-Design note on the node to edge step. The dataset has one row per node per
-second, not one row per link, so there is no per link label to train on. Edge
-reliability is therefore approximated from node reliabilities, conservatively:
-a link is only as good as its weaker end. That approximation is stated in the
-report output so it is visible rather than buried.
+Both routers call in here so they cannot disagree about what an edge weight
+means. The dataset has one row per node per second, not one per link, so edge
+reliability is approximated from node reliabilities: a link is only as good as
+its weaker end.
 """
 
 from __future__ import annotations
@@ -36,38 +29,37 @@ RELIABILITY_FLOOR = 1e-3
 RELIABILITY_CEIL = 1.0 - 1e-3
 
 
-def clip_reliability(r) -> np.ndarray:
-    """Keep reliabilities strictly inside (0, 1).
+def clip_reliability(reliability) -> np.ndarray:
+    """Keep reliability strictly inside (0, 1).
 
-    The ceiling matters for correctness, not just numerics: Dijkstra requires
-    non negative edge weights, and w = -log(r) is negative for any r > 1.
+    The ceiling is load bearing: Dijkstra needs non negative weights and
+    -log(r) goes negative as soon as r exceeds 1.
     """
-    return np.clip(np.asarray(r, dtype=float), RELIABILITY_FLOOR, RELIABILITY_CEIL)
+    return np.clip(np.asarray(reliability, dtype=float), RELIABILITY_FLOOR, RELIABILITY_CEIL)
 
 
-def reliability_to_weight(r) -> np.ndarray:
-    """w = -log(r). Summing w along a path equals -log of the product of r,
-    so Dijkstra's minimum weight path is exactly the maximum reliability path."""
-    return -np.log(clip_reliability(r))
+def reliability_to_weight(reliability) -> np.ndarray:
+    """w = -log(r), so summing weights along a path multiplies reliabilities."""
+    return -np.log(clip_reliability(reliability))
 
 
-def node_feature_matrix(snapshot, features: Sequence[str] = None) -> Tuple[List[NodeId], np.ndarray]:
-    """Canonical (node_ids, X) for one time snapshot, in schema column order."""
+def node_feature_matrix(
+    snapshot, features: Sequence[str] | None = None
+) -> Tuple[List[NodeId], np.ndarray]:
+    """(node_ids, X) for one snapshot, in canonical column order."""
     features = list(features or FEATURES)
     assert_columns(snapshot, ["node_id"] + features, "node_feature_matrix")
     frame = snapshot.sort_values("node_id")
     node_ids = [int(n) for n in frame["node_id"].to_numpy()]
-    X = frame[features].to_numpy(dtype=float)
-    return node_ids, X
+    return node_ids, frame[features].to_numpy(dtype=float)
 
 
 def geometric_edges(snapshot, radius: float) -> List[Tuple[NodeId, NodeId]]:
-    """Every unordered pair within `radius`.
+    """Unordered node pairs within `radius`.
 
-    Uses a uniform grid bucketed at the radius, so each node only compares
-    against its own cell and the eight neighbouring cells. That is O(n) expected
-    instead of the O(n^2) double loop this replaced, which mattered as soon as
-    node counts went past a few hundred.
+    Bucketed on a uniform grid of cell size `radius`, so each node only compares
+    against its own cell and the eight neighbours. Expected O(n) rather than the
+    O(n^2) double loop this replaced.
     """
     frame = snapshot.sort_values("node_id")
     ids = frame["node_id"].to_numpy().astype(int)
@@ -79,10 +71,9 @@ def geometric_edges(snapshot, radius: float) -> List[Tuple[NodeId, NodeId]]:
 
     buckets: Dict[Tuple[int, int], List[int]] = {}
     for i in range(len(ids)):
-        key = (int(xs[i] // radius), int(ys[i] // radius))
-        buckets.setdefault(key, []).append(i)
+        buckets.setdefault((int(xs[i] // radius), int(ys[i] // radius)), []).append(i)
 
-    r2 = radius * radius
+    radius_sq = radius * radius
     edges: List[Tuple[NodeId, NodeId]] = []
     seen = set()
     for (cx, cy), members in buckets.items():
@@ -94,7 +85,7 @@ def geometric_edges(snapshot, radius: float) -> List[Tuple[NodeId, NodeId]]:
             for j in candidates:
                 if j <= i:
                     continue
-                if (xs[i] - xs[j]) ** 2 + (ys[i] - ys[j]) ** 2 <= r2:
+                if (xs[i] - xs[j]) ** 2 + (ys[i] - ys[j]) ** 2 <= radius_sq:
                     u, v = int(ids[i]), int(ids[j])
                     if u == v:
                         continue
@@ -107,41 +98,35 @@ def geometric_edges(snapshot, radius: float) -> List[Tuple[NodeId, NodeId]]:
 
 @dataclass
 class SnapshotGraphs:
-    ml: nx.Graph                       # weighted by -log(reliability)
-    hop: nx.Graph                      # unweighted, the shortest path baseline
+    ml: nx.Graph                    # weighted by -log(reliability)
+    hop: nx.Graph                   # unweighted, the shortest path baseline
     positions: Dict[NodeId, Tuple[float, float]] = field(default_factory=dict)
     node_reliability: Dict[NodeId, float] = field(default_factory=dict)
 
 
 def build_snapshot_graphs(
-    snapshot,
-    node_reliability: Dict[NodeId, float],
-    radius: float,
+    snapshot, node_reliability: Dict[NodeId, float], radius: float
 ) -> SnapshotGraphs:
-    """Build the ML weighted graph and the hop count graph over the same edges.
+    """Build the weighted and hop count graphs over an identical edge set.
 
-    Both graphs always carry the identical edge set, which is what makes the
-    paired comparison in compare_methods valid: any difference in the routes
-    comes from the weighting, never from the topology.
+    Sharing the edge set is what makes the paired comparison valid: routes can
+    differ because of the weighting, never because of the topology.
     """
-    edges = geometric_edges(snapshot, radius)
     frame = snapshot.sort_values("node_id")
     positions = {
-        int(r.node_id): (float(r.x), float(r.y)) for r in frame.itertuples(index=False)
+        int(row.node_id): (float(row.x), float(row.y)) for row in frame.itertuples(index=False)
     }
 
-    g_ml = nx.Graph()
-    g_hop = nx.Graph()
-    for nid in positions:
-        g_ml.add_node(nid)
-        g_hop.add_node(nid)
+    g_ml, g_hop = nx.Graph(), nx.Graph()
+    for node_id in positions:
+        g_ml.add_node(node_id)
+        g_hop.add_node(node_id)
 
-    for u, v in edges:
-        ru = float(node_reliability.get(u, 0.5))
-        rv = float(node_reliability.get(v, 0.5))
-        r = float(clip_reliability(min(ru, rv)))
-        g_ml.add_edge(u, v, weight=float(reliability_to_weight(r)), reliability=r)
-        g_hop.add_edge(u, v, weight=1.0, reliability=r)
+    for u, v in geometric_edges(frame, radius):
+        weaker = min(float(node_reliability.get(u, 0.5)), float(node_reliability.get(v, 0.5)))
+        reliability = float(clip_reliability(weaker))
+        g_ml.add_edge(u, v, weight=float(reliability_to_weight(reliability)), reliability=reliability)
+        g_hop.add_edge(u, v, weight=1.0, reliability=reliability)
 
     return SnapshotGraphs(
         ml=g_ml, hop=g_hop, positions=positions, node_reliability=dict(node_reliability)

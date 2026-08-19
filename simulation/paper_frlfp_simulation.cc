@@ -1,3 +1,12 @@
+// NS-3 scenario for the MANET link failure prediction study.
+//
+// Writes two files per run into --outDir:
+//   positions_run{N}.csv   per second per node: position, neighbour count and
+//                          mean neighbour RSSI (geometric approximation)
+//   flowstats_run{N}.csv   per second FlowMonitor deltas, when --logFlowStats
+//                          is set. These make the traffic features causal.
+// FlowMonitor's own XML serialisation is also written at the end of the run.
+
 #include "ns3/core-module.h"
 #include "ns3/network-module.h"
 #include "ns3/mobility-module.h"
@@ -7,6 +16,7 @@
 #include "ns3/applications-module.h"
 #include "ns3/flow-monitor-module.h"
 
+#include <algorithm>
 #include <cmath>
 #include <fstream>
 #include <iomanip>
@@ -20,6 +30,9 @@ NS_LOG_COMPONENT_DEFINE("PaperFrlfpSimulation");
 static std::string g_outDir = ".";
 static uint32_t g_runId = 0;
 
+// Log distance path loss plus Gaussian shadowing, computed from positions
+// rather than read from the PHY. This is an approximation, and it is why the
+// connectivity features are geometric: see the README limitations section.
 static double
 ApproximateRssiDbm(double txPowerDbm, double distanceMeters, double pathLossExp = 3.0)
 {
@@ -46,6 +59,14 @@ ApproximateRssiDbm(double txPowerDbm, double distanceMeters, double pathLossExp 
 static std::map<uint32_t, uint64_t> g_lastTx, g_lastRx, g_lastLost;
 static std::map<uint32_t, double> g_lastDelay;
 static bool g_flowStatsHeaderWritten = false;
+
+// FlowMonitor counters are almost always monotonic, but lostPackets can fall
+// when a late packet arrives. Clamp so an unsigned subtraction cannot wrap.
+static uint64_t
+SafeDelta(uint64_t current, uint64_t previous)
+{
+    return (current > previous) ? (current - previous) : 0;
+}
 
 static void
 SampleFlowStatsAndWrite(Ptr<FlowMonitor> monitor,
@@ -87,10 +108,10 @@ SampleFlowStatsAndWrite(Ptr<FlowMonitor> monitor,
             continue;
         }
 
-        const uint64_t dTx = it->second.txPackets - g_lastTx[flowId];
-        const uint64_t dRx = it->second.rxPackets - g_lastRx[flowId];
-        const uint64_t dLost = it->second.lostPackets - g_lastLost[flowId];
-        const double dDelay = it->second.delaySum.GetDouble() - g_lastDelay[flowId];
+        const uint64_t dTx = SafeDelta(it->second.txPackets, g_lastTx[flowId]);
+        const uint64_t dRx = SafeDelta(it->second.rxPackets, g_lastRx[flowId]);
+        const uint64_t dLost = SafeDelta(it->second.lostPackets, g_lastLost[flowId]);
+        const double dDelay = std::max(0.0, it->second.delaySum.GetDouble() - g_lastDelay[flowId]);
 
         g_lastTx[flowId] = it->second.txPackets;
         g_lastRx[flowId] = it->second.rxPackets;

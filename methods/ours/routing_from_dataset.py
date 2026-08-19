@@ -1,9 +1,8 @@
 """Our router: reliability weighted Dijkstra over a dataset snapshot.
 
-Graph construction lives in graph_build so this module and routing_dijkstra
-cannot drift apart. Routing failures are counted and reported rather than
-swallowed: a bare `except: return None` is how a completely degenerate baseline
-went unnoticed for weeks in the comparison script.
+Graph construction lives in graph_build so this and routing_dijkstra cannot
+drift apart. Routing failures are counted rather than swallowed, because a bare
+except is how a fully degenerate baseline went unnoticed in the comparison.
 """
 
 from __future__ import annotations
@@ -11,7 +10,7 @@ from __future__ import annotations
 import sys
 from collections import Counter
 from pathlib import Path
-from typing import Dict, List, Optional, Tuple
+from typing import Dict, List, Optional
 
 import networkx as nx
 
@@ -32,7 +31,7 @@ NodeId = int
 
 
 class DatasetRouter:
-    """Predicts node reliability, then routes on -log(reliability) edge weights."""
+    """Predicts node reliability, then routes on -log(reliability) weights."""
 
     def __init__(self, predictor: Optional[LinkFailurePredictor] = None):
         self.predictor = predictor or LinkFailurePredictor()
@@ -48,10 +47,10 @@ class DatasetRouter:
     def build_graphs(self, snapshot, radius: float = DEFAULT_RADIUS) -> SnapshotGraphs:
         return build_snapshot_graphs(snapshot, self.node_reliabilities(snapshot), radius)
 
-    # Backwards compatible tuple form used by older scripts and the animation.
     def build_graph(self, snapshot, radius: float = DEFAULT_RADIUS):
-        g = self.build_graphs(snapshot, radius=radius)
-        return g.ml, g.hop, g.positions
+        """Tuple form kept for the animation and older callers."""
+        graphs = self.build_graphs(snapshot, radius=radius)
+        return graphs.ml, graphs.hop, graphs.positions
 
     def find_ml_path(self, graph: nx.Graph, src: NodeId, dst: NodeId) -> Optional[List[NodeId]]:
         return self._shortest_path(graph, src, dst, weight="weight", tag="ml")

@@ -1,17 +1,14 @@
 """SFRNNR: our reimplementation of the base paper's fuzzy recurrent predictor.
 
-The paper releases no code, so this is built from the published description:
-fuzzification of the nine link factors, a recurrent encoder, normalisation, a
-consequent layer, defuzzification into a link failure probability, and a second
-head that emits the adaptive decision threshold.
+Built from the published description, since no code was released: fuzzify the
+nine link factors, encode with a GRU, normalise, apply a consequent layer,
+defuzzify into a link failure probability, and emit an adaptive threshold from a
+second head.
 
-Honest scoping note, kept in the source because it matters when reading any
-comparison against this model. This is a fuzzy inspired network, not a faithful
-ANFIS. Membership functions are trainable Gaussians, but there is no explicit
-rule layer computing a T norm across inputs; the `consequent` dense layer learns
-an arbitrary combination instead. That buys differentiability end to end and
-costs the rule level interpretability that is the usual argument for fuzzy
-methods.
+Scoping note: this is fuzzy inspired, not a faithful ANFIS. Membership functions
+are trainable Gaussians, but there is no explicit rule layer computing a T norm
+across inputs; the consequent dense layer learns an arbitrary combination. That
+buys end to end differentiability and costs rule level interpretability.
 """
 
 from __future__ import annotations
@@ -38,10 +35,10 @@ N_MFS = 2
 
 @_serializable(package="SFRNNR")
 class FuzzificationLayer(layers.Layer):
-    """Gaussian membership degrees, one set per input factor.
+    """Gaussian membership degrees, n_mfs per input factor.
 
-    Widths are stored as logs and exponentiated so they stay strictly positive
-    without a constraint or a clip.
+    Widths are stored as logs and exponentiated, so they stay positive without a
+    constraint or a clip.
     """
 
     def __init__(self, n_inputs: int = N_FACTORS, n_mfs: int = N_MFS, **kwargs):
@@ -67,17 +64,16 @@ class FuzzificationLayer(layers.Layer):
 
     def call(self, inputs):
         x = tf.expand_dims(inputs, -1)
-        c = tf.reshape(self.centers, (1, 1, self.n_inputs, self.n_mfs))
-        w = tf.exp(self.log_widths) + 1e-4
-        w = tf.reshape(w, (1, 1, self.n_inputs, self.n_mfs))
-        mu = tf.exp(-tf.square(x - c) / (2.0 * tf.square(w)))
-        b, t = tf.shape(mu)[0], tf.shape(mu)[1]
-        return tf.reshape(mu, (b, t, self.out_dim))
+        centers = tf.reshape(self.centers, (1, 1, self.n_inputs, self.n_mfs))
+        widths = tf.reshape(tf.exp(self.log_widths) + 1e-4, (1, 1, self.n_inputs, self.n_mfs))
+        membership = tf.exp(-tf.square(x - centers) / (2.0 * tf.square(widths)))
+        batch, steps = tf.shape(membership)[0], tf.shape(membership)[1]
+        return tf.reshape(membership, (batch, steps, self.out_dim))
 
     def get_config(self):
-        cfg = super().get_config()
-        cfg.update({"n_inputs": self.n_inputs, "n_mfs": self.n_mfs})
-        return cfg
+        config = super().get_config()
+        config.update({"n_inputs": self.n_inputs, "n_mfs": self.n_mfs})
+        return config
 
 
 @_serializable(package="SFRNNR")
@@ -98,27 +94,29 @@ def build_sfrnnr_model(
     gru_units: int = 16,
     rule_units: int = 8,
     thr_hidden: int = 8,
-    dropout: float = 0.1,
+    dropout: float = 0.0,
     learning_rate: float = 2e-3,
     name: str = "SFRNNR",
 ) -> keras.Model:
-    in_shape = (seq_len, n_factors) if seq_len is not None else (None, n_factors)
-    inputs = keras.Input(shape=in_shape, name="factor_sequence")
+    input_shape = (seq_len, n_factors) if seq_len is not None else (None, n_factors)
+    inputs = keras.Input(shape=input_shape, name="factor_sequence")
 
-    fuzz = FuzzificationLayer(n_inputs=n_factors, n_mfs=n_mfs, name="fuzzification")(inputs)
-    rnn = layers.GRU(gru_units, return_sequences=True, activation="tanh", name="fuzzy_rnn")(fuzz)
-    if dropout and dropout > 0:
-        rnn = layers.Dropout(dropout, name="fuzzy_rnn_dropout")(rnn)
-    norm = layers.LayerNormalization(name="normalization")(rnn)
+    fuzzified = FuzzificationLayer(n_inputs=n_factors, n_mfs=n_mfs, name="fuzzification")(inputs)
+    encoded = layers.GRU(gru_units, return_sequences=True, name="fuzzy_rnn")(fuzzified)
+    if dropout > 0:
+        encoded = layers.Dropout(dropout, name="fuzzy_rnn_dropout")(encoded)
+    normalised = layers.LayerNormalization(name="normalization")(encoded)
 
-    cons = layers.Dense(rule_units, activation="relu", name="consequent")(norm)
-    lfp = layers.Dense(1, activation="sigmoid", name="summation_lfp")(cons)
+    consequent = layers.Dense(rule_units, activation="relu", name="consequent")(normalised)
+    lfp = layers.Dense(1, activation="sigmoid", name="summation_lfp")(consequent)
 
-    thr_h = layers.Dense(max(1, thr_hidden), activation="relu", name="threshold_hidden")(norm)
-    thr_log = layers.Dense(1, activation="sigmoid", name="threshold_logit")(thr_h)
-    thr = ThresholdScale(name="output_threshold")(thr_log)
+    threshold_hidden = layers.Dense(max(1, thr_hidden), activation="relu", name="threshold_hidden")(normalised)
+    threshold_logit = layers.Dense(1, activation="sigmoid", name="threshold_logit")(threshold_hidden)
+    threshold = ThresholdScale(name="output_threshold")(threshold_logit)
 
-    model = keras.Model(inputs=inputs, outputs={"lfp": lfp, "lfp_threshold": thr}, name=name)
+    model = keras.Model(
+        inputs=inputs, outputs={"lfp": lfp, "lfp_threshold": threshold}, name=name
+    )
     model.compile(
         optimizer=keras.optimizers.Adam(learning_rate),
         loss={
@@ -126,12 +124,14 @@ def build_sfrnnr_model(
             "lfp_threshold": keras.losses.MeanSquaredError(),
         },
         loss_weights={"lfp": 1.0, "lfp_threshold": 0.25},
-        metrics={"lfp": [keras.metrics.AUC(name="auc")]},
+        # String form on purpose: a metric instance on a multi output model
+        # triggers repeated retracing on some Keras 3 builds.
+        metrics={"lfp": "auc"},
     )
     return model
 
 
-def custom_objects_dict():
+def custom_objects_dict() -> dict:
     return {"FuzzificationLayer": FuzzificationLayer, "ThresholdScale": ThresholdScale}
 
 

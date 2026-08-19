@@ -1,6 +1,6 @@
 {
   "smoke": true,
-  "rows": 24000,
+  "rows": 18000,
   "runs": [
     1,
     2,
@@ -36,14 +36,14 @@
     "LL_d",
     "T_hello"
   ],
-  "label_rate": 0.27116666666666667,
+  "label_rate": 0.257,
   "label_rate_by_run": {
-    "1": 0.28575,
-    "2": 0.2855,
-    "3": 0.286,
-    "4": 0.25125,
-    "5": 0.25025,
-    "6": 0.26825
+    "1": 0.273,
+    "2": 0.268,
+    "3": 0.2813333333333333,
+    "4": 0.20666666666666667,
+    "5": 0.25166666666666665,
+    "6": 0.2613333333333333
   },
   "constant_model_features": [],
   "constant_paper_factors": [],
@@ -62,111 +62,111 @@
       6
     ]
   },
-  "rows_train": 12000,
-  "rows_val": 4000,
-  "rows_test": 8000,
+  "rows_train": 9000,
+  "rows_val": 3000,
+  "rows_test": 6000,
   "feature_summary": {
     "neighbor_count": {
-      "mean": 8.319166666666666,
-      "std": 4.096386534360361,
+      "mean": 8.389666666666667,
+      "std": 4.221366800772786,
       "min": 0.0,
       "max": 24.0,
       "n_unique": 25
     },
     "x": {
-      "mean": 503.07034154166666,
-      "std": 240.58334516583656,
+      "mean": 505.6447955,
+      "std": 240.9097007527551,
       "min": 0.222,
       "max": 998.48,
-      "n_unique": 22325
+      "n_unique": 16693
     },
     "y": {
-      "mean": 494.53207841666665,
-      "std": 242.08886024880087,
-      "min": 0.178,
+      "mean": 492.7612512777779,
+      "std": 241.53452959558396,
+      "min": 0.899,
       "max": 999.149,
-      "n_unique": 22356
+      "n_unique": 16722
     },
     "time": {
-      "mean": 20.5,
-      "std": 11.543396380615196,
+      "mean": 15.5,
+      "std": 8.65544144839919,
       "min": 1.0,
-      "max": 40.0,
-      "n_unique": 40
+      "max": 30.0,
+      "n_unique": 30
     },
     "avg_rssi": {
-      "mean": -42.921313749999996,
-      "std": 5.2523399625447205,
+      "mean": -42.93710794444444,
+      "std": 5.385543296895578,
       "min": -95.0,
       "max": 1.945,
-      "n_unique": 10194
+      "n_unique": 8961
     },
     "dist_to_center": {
-      "mean": 313.7207844368632,
-      "std": 134.55837693614873,
+      "mean": 313.37102301708836,
+      "std": 135.12689605058588,
       "min": 1.4571372618940126,
       "max": 703.4799761592366,
-      "n_unique": 22622
+      "n_unique": 16860
     },
     "rssi_velocity": {
-      "mean": -0.006681666666666667,
-      "std": 4.212541001283812,
+      "mean": -0.0017407777777777788,
+      "std": 4.329463468763699,
       "min": -54.408,
       "max": 59.851,
-      "n_unique": 12912
+      "n_unique": 10750
     },
     "neighbor_velocity": {
-      "mean": 0.050166666666666665,
-      "std": 1.5472771693813907,
+      "mean": 0.06333333333333334,
+      "std": 1.5796940632075989,
       "min": -9.0,
       "max": 8.0,
       "n_unique": 18
     },
     "pdr": {
-      "mean": 0.7947833336149128,
+      "mean": 0.7947833336149129,
       "std": 0.34314577809117625,
       "min": 0.0,
       "max": 1.0,
       "n_unique": 64
     },
     "log_delay": {
-      "mean": 5.858053404976139,
+      "mean": 5.85805340497614,
       "std": 8.519348963122136,
       "min": 0.0,
       "max": 24.79315940566548,
       "n_unique": 197
     },
     "rssi_trend_3": {
-      "mean": -0.0067858888888888864,
-      "std": 2.0032948979093828,
+      "mean": -0.011014611111111107,
+      "std": 2.033553886320809,
       "min": -21.288,
       "max": 20.223,
-      "n_unique": 14083
+      "n_unique": 11415
     },
     "neighbor_trend_3": {
-      "mean": 0.04602777777777777,
-      "std": 0.9303732619953147,
+      "mean": 0.07192592592592592,
+      "std": 0.9437184108395236,
       "min": -5.0,
       "max": 5.333333333333333,
       "n_unique": 30
     },
     "rssi_std_5": {
-      "mean": 2.391056992295366,
-      "std": 2.809038649485086,
+      "mean": 2.374234700401999,
+      "std": 2.9133512439834637,
       "min": 0.0,
       "max": 33.00702835003479,
-      "n_unique": 22745
+      "n_unique": 16750
     },
     "neighbor_std_5": {
-      "mean": 1.2988805523179137,
-      "std": 0.9326468485679049,
+      "mean": 1.3013751412393155,
+      "std": 0.9773833932085744,
       "min": 0.0,
       "max": 7.596051605933177,
-      "n_unique": 1833
+      "n_unique": 1391
     }
   },
   "warnings": [
-    "traffic features (pdr, log_delay) come from end of run FlowMonitor aggregates, so their value at time t depends on packets sent after t. Enable periodic flow statistics in the simulation, or pass --allow-run-level-traffic to acknowledge the limitation."
+    "traffic features (pdr, log_delay) come from end of run FlowMonitor aggregates, so their value at time t depends on packets sent after t. Enable per second flow statistics in the simulation, or pass --allow-run-level-traffic to acknowledge the limitation."
   ],
   "problems": [],
   "passed": true

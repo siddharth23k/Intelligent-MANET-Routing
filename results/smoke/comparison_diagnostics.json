@@ -22,18 +22,18 @@
   "decisions": 16,
   "skipped": {
     "no_edges": 0,
-    "no_common_path": 3
+    "no_common_path": 5
   },
   "frlfp": {
     "snapshots": 8,
     "routed_on_filtered": 16,
     "fell_back_to_full_graph": 0,
-    "no_path": 3,
+    "no_path": 5,
     "fallback_rate": 0.0,
-    "mean_risky_node_fraction": 0.00125
+    "mean_risky_node_fraction": 0.0
   },
   "ours_routing_failures": {
-    "hop:no_path": 3,
-    "ml:no_path": 3
+    "hop:no_path": 5,
+    "ml:no_path": 5
   }
 }
