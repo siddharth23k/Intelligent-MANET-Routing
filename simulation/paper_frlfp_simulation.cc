@@ -10,6 +10,8 @@
 #include <cmath>
 #include <fstream>
 #include <iomanip>
+#include <map>
+#include <vector>
 
 using namespace ns3;
 
@@ -31,6 +33,82 @@ ApproximateRssiDbm(double txPowerDbm, double distanceMeters, double pathLossExp 
     shadowing->SetAttribute("Variance", DoubleValue(16.0));
     const double noiseDb = shadowing->GetValue();
     return (txPowerDbm - loss) + noiseDb;
+}
+
+
+// Periodic FlowMonitor checkpointing.
+//
+// FlowMonitor's XML serialisation is an end of run aggregate. Using those totals
+// as a feature at time t means the value depends on packets that had not been
+// sent yet, which is lookahead. Writing per interval deltas here makes the
+// traffic features causal, so the Python pipeline can build a running delivery
+// ratio from data available at or before t.
+static std::map<uint32_t, uint64_t> g_lastTx, g_lastRx, g_lastLost;
+static std::map<uint32_t, double> g_lastDelay;
+static bool g_flowStatsHeaderWritten = false;
+
+static void
+SampleFlowStatsAndWrite(Ptr<FlowMonitor> monitor,
+                        Ptr<Ipv4FlowClassifier> classifier,
+                        double sampleTimeSec,
+                        uint32_t numNodes)
+{
+    std::ostringstream fname;
+    fname << g_outDir << "/flowstats_run" << g_runId << ".csv";
+
+    std::ofstream ofs;
+    if (!g_flowStatsHeaderWritten)
+    {
+        ofs.open(fname.str(), std::ofstream::out);
+        ofs << "time,nodeId,tx_packets,rx_packets,lost_packets,delay_sum\n";
+        g_flowStatsHeaderWritten = true;
+    }
+    else
+    {
+        ofs.open(fname.str(), std::ofstream::out | std::ofstream::app);
+    }
+
+    monitor->CheckForLostPackets();
+    const FlowMonitor::FlowStatsContainer stats = monitor->GetFlowStats();
+
+    std::vector<uint64_t> tx(numNodes, 0), rx(numNodes, 0), lost(numNodes, 0);
+    std::vector<double> delay(numNodes, 0.0);
+
+    for (auto it = stats.begin(); it != stats.end(); ++it)
+    {
+        const uint32_t flowId = it->first;
+        Ipv4FlowClassifier::FiveTuple t = classifier->FindFlow(flowId);
+
+        // 10.1.1.k maps back to node k-1, matching the addressing set up below.
+        const uint32_t srcNode = (t.sourceAddress.Get() & 0xff) - 1;
+        const uint32_t dstNode = (t.destinationAddress.Get() & 0xff) - 1;
+        if (srcNode >= numNodes || dstNode >= numNodes)
+        {
+            continue;
+        }
+
+        const uint64_t dTx = it->second.txPackets - g_lastTx[flowId];
+        const uint64_t dRx = it->second.rxPackets - g_lastRx[flowId];
+        const uint64_t dLost = it->second.lostPackets - g_lastLost[flowId];
+        const double dDelay = it->second.delaySum.GetDouble() - g_lastDelay[flowId];
+
+        g_lastTx[flowId] = it->second.txPackets;
+        g_lastRx[flowId] = it->second.rxPackets;
+        g_lastLost[flowId] = it->second.lostPackets;
+        g_lastDelay[flowId] = it->second.delaySum.GetDouble();
+
+        tx[srcNode] += dTx;
+        lost[srcNode] += dLost;
+        delay[srcNode] += dDelay;
+        rx[dstNode] += dRx;
+    }
+
+    for (uint32_t i = 0; i < numNodes; ++i)
+    {
+        ofs << std::fixed << std::setprecision(3) << sampleTimeSec << "," << i << ","
+            << tx[i] << "," << rx[i] << "," << lost[i] << "," << delay[i] << "\n";
+    }
+    ofs.close();
 }
 
 static void
@@ -99,6 +177,7 @@ main(int argc, char* argv[])
     double packetIntervalSeconds = 1.0;
     uint32_t cbrConnections = 10;
     double txPowerDbm = 16.0;
+    bool logFlowStats = true;
 
     CommandLine cmd;
     cmd.AddValue("numNodes", "Number of nodes", numNodes);
@@ -116,6 +195,9 @@ main(int argc, char* argv[])
     cmd.AddValue("interval", "Inter-packet interval per flow (s)", packetIntervalSeconds);
     cmd.AddValue("cbrConnections", "Number of CBR source-destination pairs", cbrConnections);
     cmd.AddValue("txPowerDbm", "Transmit power used in RSSI approximation", txPowerDbm);
+    cmd.AddValue("logFlowStats",
+                 "Write per second FlowMonitor deltas so traffic features are causal",
+                 logFlowStats);
     cmd.Parse(argc, argv);
 
     if (numNodes < 2)
@@ -204,10 +286,20 @@ main(int argc, char* argv[])
 
     FlowMonitorHelper flowmon;
     Ptr<FlowMonitor> monitor = flowmon.InstallAll();
+    Ptr<Ipv4FlowClassifier> classifier = DynamicCast<Ipv4FlowClassifier>(flowmon.GetClassifier());
 
     for (double t = 1.0; t <= simTimeSeconds; t += 1.0)
     {
         Simulator::Schedule(Seconds(t), &SamplePositionsAndWrite, nodes, t, commRadiusMeters, txPowerDbm);
+        if (logFlowStats)
+        {
+            Simulator::Schedule(Seconds(t),
+                                &SampleFlowStatsAndWrite,
+                                monitor,
+                                classifier,
+                                t,
+                                numNodes);
+        }
     }
 
     Simulator::Stop(Seconds(simTimeSeconds));

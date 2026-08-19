@@ -19,6 +19,10 @@ PACKET_SIZE="${PACKET_SIZE:-512}"
 MAX_PACKETS="${MAX_PACKETS:-300}"
 PKT_INTERVAL="${PKT_INTERVAL:-1.0}"
 CBR_CONNECTIONS="${CBR_CONNECTIONS:-10}"
+# Per second FlowMonitor deltas. Without these the traffic features are end of
+# run aggregates, which are not causal at time t and the dataset validator will
+# refuse to pass them.
+LOG_FLOW_STATS="${LOG_FLOW_STATS:-true}"
 
 mkdir -p "$DATA_DIR"
 
@@ -37,6 +41,6 @@ cp "$SIM_SRC" "$NS3_DIR/scratch/paper_frlfp_simulation.cc"
 
 for seed in $(seq 1 "$NUM_RUNS"); do
     cd "$NS3_DIR"
-  ./ns3 run "scratch/paper_frlfp_simulation --RngRun=$seed --runId=$seed --outDir=$DATA_DIR --commRadius=$COMM_RADIUS --numNodes=$NUM_NODES --simTimeSeconds=$SIM_TIME --area=$AREA_SIZE --speedMin=$SPEED_MIN --speedMax=$SPEED_MAX --pause=$PAUSE --packetSize=$PACKET_SIZE --maxPackets=$MAX_PACKETS --interval=$PKT_INTERVAL --cbrConnections=$CBR_CONNECTIONS"
+  ./ns3 run "scratch/paper_frlfp_simulation --RngRun=$seed --runId=$seed --outDir=$DATA_DIR --commRadius=$COMM_RADIUS --numNodes=$NUM_NODES --simTimeSeconds=$SIM_TIME --area=$AREA_SIZE --speedMin=$SPEED_MIN --speedMax=$SPEED_MAX --pause=$PAUSE --packetSize=$PACKET_SIZE --maxPackets=$MAX_PACKETS --interval=$PKT_INTERVAL --cbrConnections=$CBR_CONNECTIONS --logFlowStats=$LOG_FLOW_STATS"
 done
 

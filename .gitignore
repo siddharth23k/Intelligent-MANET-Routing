@@ -5,15 +5,32 @@ __pycache__/
 *.pyo
 *.pyd
 .ipynb_checkpoints/
-*.pcap
+.pytest_cache/
+.cache/
 .DS_Store
-dataset/*.xml
-dataset/*.csv
-!dataset/.gitkeep 
+*.log
+*.pcap
+
+# Raw NS-3 output and derived datasets are large and reproducible from the
+# simulation, so they are not tracked.
+data/raw/*.xml
+data/raw/*.csv
+data/processed/*.csv
+
+# Model artifacts are reproducible from pipeline/train_predictor.py and
+# pipeline/train_sfrnnr_paper.py. Tracking them is what let the code and the
+# shipped models drift apart in the first place.
 *.pkl
 *.keras
 *.h5
 *.joblib
-*.log
-dataset/paper/processed/*.csv
-*.csv
+
+# Small provenance files are tracked on purpose: they record exactly which
+# split and which statistics produced the current results.
+!results/models/predictor_schema.json
+!results/models/sfrnnr_meta.json
+!results/models/feature_norm_stats.json
+!results/models/run_split.json
+
+# Files retired by a cleanup, kept out of the way for manual deletion.
+_to_delete/

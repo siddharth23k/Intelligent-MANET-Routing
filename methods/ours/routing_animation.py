@@ -1,15 +1,30 @@
-import sys
-import random
+"""Animated view of ML weighted routing against hop count routing.
+
+Visualisation only. Nothing here feeds the reported numbers; those come from
+pipeline/compare_methods.py.
+"""
+
 import argparse
-import numpy as np
-import pandas as pd
-import networkx as nx
-import matplotlib.pyplot as plt
-from matplotlib.animation import FuncAnimation
+import random
+import sys
 from pathlib import Path
 
-sys.path.append(str(Path(__file__).resolve().parent))
-from routing_from_dataset import DatasetRouter
+import matplotlib.pyplot as plt
+import networkx as nx
+import numpy as np
+import pandas as pd
+from matplotlib.animation import FuncAnimation
+
+sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "config"))
+from bootstrap import setup_paths  # noqa: E402
+
+setup_paths()
+
+from config_loader import get_config  # noqa: E402
+from routing_from_dataset import DatasetRouter  # noqa: E402
+
+CFG = get_config()
+DEFAULT_RADIUS = CFG.communication_radius_default
 
 class MANETAnimation:
     def __init__(self, dataset_path, start_time=10.0, run_id=None, pair_change_every=10, min_hops=3, random_seed=42):
@@ -34,7 +49,7 @@ class MANETAnimation:
         self.times = [t for t in all_times if t >= float(start_time)]
 
         if not self.times:
-                        self.times = all_times
+            self.times = all_times
 
         self.ml_scores = []
         self.baseline_scores = []
@@ -180,7 +195,7 @@ class MANETAnimation:
                 return
 
             # Use the same connectivity radius as evaluation (avoid mismatched graph density).
-            G_ml, G_base, pos = self.router.build_graph(snapshot, radius=150.0)
+            G_ml, G_base, pos = self.router.build_graph(snapshot, radius=DEFAULT_RADIUS)
 
             # Change (src,dst) every K timesteps to showcase diverse scenarios
             if (frame % self.pair_change_every == 0) or (self.source is None) or (self.target is None):

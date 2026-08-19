@@ -1,4 +1,19 @@
-"""Train SFRNNR baseline."""
+"""Stage 5a: train the SFRNNR paper baseline.
+
+The point of this script is a comparison that is worth publishing, which means
+the baseline has to be trained honestly. The previous defaults were one epoch
+over two hundred of three thousand sequences, roughly seven percent of the data,
+and the resulting model flagged over ninety percent of nodes as failing. Beating
+that says nothing.
+
+What changed:
+  - real epoch budget with early stopping on a validation split
+  - the validation split comes from the shared run level splitter, so the
+    baseline is never validated or selected on the runs it will be scored on
+  - factor normalisation statistics fitted on training runs only and persisted
+    into the meta file, so inference reuses exactly the same scaling
+  - --smoke keeps the whole thing under a few seconds for CI
+"""
 
 from __future__ import annotations
 
@@ -12,141 +27,217 @@ from pathlib import Path
 import numpy as np
 import pandas as pd
 
-ROOT = Path(__file__).resolve().parent.parent
-sys.path.insert(0, str(ROOT / "methods/baseline"))
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "config"))
+from bootstrap import setup_paths  # noqa: E402
 
-os.environ.setdefault("TF_CPP_MIN_LOG_LEVEL", "2")
+ROOT = setup_paths()
 
-import tensorflow as tf
+os.environ.setdefault("TF_CPP_MIN_LOG_LEVEL", "3")
+
+import tensorflow as tf  # noqa: E402
 from tensorflow import keras  # noqa: E402
 
+from config_loader import get_config  # noqa: E402
 from label_utils import add_link_failure_labels, drop_label_aux_columns  # noqa: E402
-from sfrnnr_model import (  # noqa: E402
-    FACTOR_COLS,
-    N_FACTORS,
-    N_MFS,
-    build_sfrnnr_model,
-)
+from normalization import MinMaxStats  # noqa: E402
+from schema import FACTOR_COLS  # noqa: E402
+from sfrnnr_model import N_FACTORS, N_MFS, build_sfrnnr_model  # noqa: E402
+from splits import make_run_split  # noqa: E402
 from threshold_model import AdaptiveThresholdModel  # noqa: E402
 
-
-def _minmax_global(s: pd.Series) -> pd.Series:
-    s = s.astype(float)
-    lo, hi = s.min(), s.max()
-    if np.isclose(hi - lo, 0.0):
-        return pd.Series(np.zeros(len(s)), index=s.index)
-    return (s - lo) / (hi - lo)
+CFG = get_config()
+MODEL_PATH = ROOT / "results" / "models" / "sfrnnr_paper.keras"
+META_PATH = ROOT / "results" / "models" / "sfrnnr_meta.json"
+DEFAULT_DATASET = ROOT / "data" / "processed" / "paper_featured_dataset.csv"
 
 
-def pad_sequences(items: list[tuple], max_len: int):
-    Xs, ys, thrs, wts = [], [], [], []
-    for X, y, thr in items:
-        t = X.shape[0]
-        pad = max_len - t
-        X_pad = np.pad(X, ((0, pad), (0, 0)), mode="constant", constant_values=0.0)
-        y_pad = np.pad(y, (0, pad), mode="constant", constant_values=0.0)
-        thr_pad = np.pad(thr, (0, pad), mode="constant", constant_values=0.0)
-        wts_pad = np.concatenate([np.ones(t), np.zeros(pad)])
-        Xs.append(X_pad)
-        ys.append(y_pad)
-        thrs.append(thr_pad)
-        wts.append(wts_pad)
-    return np.stack(Xs), np.stack(ys), np.stack(thrs), np.stack(wts)
+def build_sequences(df: pd.DataFrame, seq_len: int):
+    """One fixed length window per (run_id, node_id).
+
+    Tracks shorter than seq_len are dropped rather than zero padded. Padding
+    plus per timestep sample weights was the old approach and it made the loss
+    masking fragile across Keras versions; since seq_len is clamped to the
+    shortest track in the caller, nothing is actually lost.
+    """
+    Xs, ys, thrs, runs = [], [], [], []
+    df = df.assign(_thr=AdaptiveThresholdModel.predict_threshold_frame(df))
+
+    dropped = 0
+    for (run_id, node_id), g in df.groupby(["run_id", "node_id"], sort=False):
+        if len(g) < seq_len:
+            dropped += 1
+            continue
+        g = g.sort_values("time")
+        Xs.append(g[FACTOR_COLS].to_numpy(dtype=np.float32)[-seq_len:])
+        ys.append(g["link_failure"].to_numpy(dtype=np.float32)[-seq_len:].reshape(-1, 1))
+        thrs.append(g["_thr"].to_numpy(dtype=np.float32)[-seq_len:].reshape(-1, 1))
+        runs.append(int(run_id))
+
+    if not Xs:
+        raise ValueError(
+            f"no (run, node) track reaches seq_len={seq_len}; lower --seq-len"
+        )
+    if dropped:
+        print(f"[train_sfrnnr] dropped {dropped} track(s) shorter than seq_len={seq_len}")
+    return (
+        np.stack(Xs),
+        np.stack(ys),
+        np.stack(thrs),
+        np.asarray(runs, dtype=int),
+    )
 
 
-def main():
-    parser = argparse.ArgumentParser(description="Train SFRNNR paper baseline")
-    parser.add_argument("--dataset", default="data/processed/paper_featured_dataset.csv")
-    parser.add_argument("--gru-units", type=int, default=16)
-    parser.add_argument("--rule-units", type=int, default=8)
-    parser.add_argument("--n-mfs", type=int, default=N_MFS)
-    parser.add_argument("--epochs", type=int, default=1)
-    parser.add_argument("--batch-size", type=int, default=1024)
-    parser.add_argument("--max-train-sequences", type=int, default=200)
-    parser.add_argument("--seed", type=int, default=42)
+def main() -> None:
+    tr_cfg = CFG.training
+    sm = CFG.smoke
+
+    parser = argparse.ArgumentParser(description="Train the SFRNNR paper baseline.")
+    parser.add_argument("--dataset", default=str(DEFAULT_DATASET))
+    parser.add_argument("--smoke", action="store_true")
+    parser.add_argument("--epochs", type=int, default=None)
+    parser.add_argument("--seq-len", type=int, default=None)
+    parser.add_argument("--gru-units", type=int, default=int(tr_cfg["sfrnnr_gru_units"]))
+    parser.add_argument("--rule-units", type=int, default=int(tr_cfg["sfrnnr_rule_units"]))
+    parser.add_argument("--n-mfs", type=int, default=int(tr_cfg["sfrnnr_n_mfs"]))
+    parser.add_argument("--batch-size", type=int, default=int(tr_cfg["sfrnnr_batch_size"]))
+    parser.add_argument("--max-train-sequences", type=int, default=None)
+    parser.add_argument("--seed", type=int, default=CFG.random_seed)
+    parser.add_argument("--test-run-count", type=int, default=None)
+    parser.add_argument("--val-run-count", type=int, default=None)
     args = parser.parse_args()
+
+    smoke = args.smoke
+    epochs = args.epochs if args.epochs is not None else int(sm["sfrnnr_epochs"] if smoke else tr_cfg["sfrnnr_epochs"])
+    max_train_sequences = (
+        args.max_train_sequences
+        if args.max_train_sequences is not None
+        else (int(sm["sfrnnr_max_train_sequences"]) if smoke else 0)
+    )
+    test_run_count = args.test_run_count if args.test_run_count is not None else int(
+        sm["test_run_count"] if smoke else CFG.test_run_count
+    )
+    val_run_count = args.val_run_count if args.val_run_count is not None else int(
+        sm["val_run_count"] if smoke else CFG.val_run_count
+    )
 
     random.seed(args.seed)
     np.random.seed(args.seed)
     tf.random.set_seed(args.seed)
 
     df = pd.read_csv(args.dataset).sort_values(["run_id", "node_id", "time"]).reset_index(drop=True)
-    df = add_link_failure_labels(df)
-    df = drop_label_aux_columns(df)
+    df = drop_label_aux_columns(add_link_failure_labels(df))
 
-    for col in FACTOR_COLS:
-        df[col] = _minmax_global(df[col])
+    run_ids = sorted(df["run_id"].unique().astype(int).tolist())
+    split = make_run_split(run_ids, seed=args.seed, test_run_count=test_run_count, val_run_count=val_run_count)
 
-    sequences_with_runs = []
-    for (run_id, node_id), group in df.groupby(["run_id", "node_id"]):
-        if len(group) < 3:
-            continue
-        X = group[FACTOR_COLS].values.astype(np.float32)
-        y = group["link_failure"].values.astype(np.float32)
-        
-        thr = np.array([AdaptiveThresholdModel.predict_threshold(row.to_dict()) 
-                       for _, row in group.iterrows()]).astype(np.float32)
-        
-        sequences_with_runs.append((run_id, X, y, thr))
+    # Fit factor normalisation on training runs only, then persist it so
+    # inference cannot silently use different statistics.
+    stats = MinMaxStats.fit(df[df["run_id"].isin(split.train_runs)], FACTOR_COLS)
+    df = stats.transform(df, FACTOR_COLS)
 
-    run_ids = sorted(df["run_id"].unique())
-    train_runs = set(run_ids[:20])
-    test_runs = set(run_ids[20:])
+    track_lengths = df.groupby(["run_id", "node_id"]).size()
+    timesteps = int(track_lengths.min())
+    seq_len = args.seq_len or (int(sm["sfrnnr_seq_len"]) if smoke else timesteps)
+    seq_len = max(3, min(seq_len, timesteps))
 
-    train_sequences = [(X, y, thr) for run_id, X, y, thr in sequences_with_runs if run_id in train_runs]
-    test_sequences = [(X, y, thr) for run_id, X, y, thr in sequences_with_runs if run_id in test_runs]
+    X, y, thr, runs = build_sequences(df, seq_len)
 
-    if args.max_train_sequences > 0:
-        train_sequences = train_sequences[:args.max_train_sequences]
+    train_mask = np.isin(runs, split.train_runs)
+    val_mask = np.isin(runs, split.val_runs) if split.val_runs else np.zeros_like(train_mask)
+    if not val_mask.any():
+        # No dedicated validation runs (smoke). Hold out a slice of the training
+        # sequences instead. The test runs are still never touched.
+        idx = np.where(train_mask)[0]
+        cut = max(1, int(0.2 * len(idx)))
+        val_idx = idx[:cut]
+        val_mask = np.zeros_like(train_mask)
+        val_mask[val_idx] = True
+        train_mask[val_idx] = False
 
-    max_len = max(max(len(seq[0]) for seq in train_sequences), 
-                  max(len(seq[0]) for seq in test_sequences))
-    
-    X_train, y_train, thr_train, wts_train = pad_sequences(train_sequences, max_len)
-    X_test, y_test, thr_test, wts_test = pad_sequences(test_sequences, max_len)
+    tr_idx = np.where(train_mask)[0]
+    if max_train_sequences > 0:
+        tr_idx = tr_idx[:max_train_sequences]
+    va_idx = np.where(val_mask)[0]
 
     model = build_sfrnnr_model(
+        seq_len=seq_len,
+        n_factors=N_FACTORS,
+        n_mfs=args.n_mfs or N_MFS,
         gru_units=args.gru_units,
         rule_units=args.rule_units,
-        n_mfs=args.n_mfs,
-        seq_len=max_len,
-        n_factors=N_FACTORS,
-    )
-    history = model.fit(
-        X_train, {"lfp": y_train, "lfp_threshold": thr_train},
-        sample_weight={"lfp": wts_train, "lfp_threshold": wts_train},
-        validation_data=(X_test, {"lfp": y_test, "lfp_threshold": thr_test}),
-        epochs=args.epochs,
-        batch_size=args.batch_size,
-        verbose=2,
     )
 
-    model_path = ROOT / "results/models" / "sfrnnr_paper.keras"
-    meta_path = ROOT / "results/models" / "sfrnnr_meta.json"
-    
-    os.makedirs(model_path.parent, exist_ok=True)
-    model.save(model_path)
-    
-    metadata = {
+    callbacks = []
+    if not smoke:
+        callbacks.append(
+            keras.callbacks.EarlyStopping(
+                monitor="val_lfp_auc",
+                mode="max",
+                patience=int(tr_cfg["sfrnnr_patience"]),
+                restore_best_weights=True,
+                verbose=1,
+            )
+        )
+        callbacks.append(
+            keras.callbacks.ReduceLROnPlateau(
+                monitor="val_loss", factor=0.5, patience=2, min_lr=1e-5, verbose=0
+            )
+        )
+
+    history = model.fit(
+        X[tr_idx],
+        {"lfp": y[tr_idx], "lfp_threshold": thr[tr_idx]},
+        validation_data=(
+            X[va_idx],
+            {"lfp": y[va_idx], "lfp_threshold": thr[va_idx]},
+        ),
+        epochs=epochs,
+        batch_size=args.batch_size,
+        callbacks=callbacks,
+        verbose=2 if not smoke else 0,
+    )
+
+    MODEL_PATH.parent.mkdir(parents=True, exist_ok=True)
+    model.save(MODEL_PATH)
+
+    def _last(key, default=float("nan")):
+        v = history.history.get(key)
+        return float(v[-1]) if v else default
+
+    meta = {
+        "smoke": bool(smoke),
+        "seed": int(args.seed),
         "gru_units": args.gru_units,
         "rule_units": args.rule_units,
         "n_mfs": args.n_mfs,
-        "epochs": args.epochs,
-        "batch_size": args.batch_size,
-        "max_len": max_len,
-        "seq_len": max_len,
-        "train_sequences": len(train_sequences),
-        "test_sequences": len(test_sequences),
-        "train_runs": list(train_runs),
-        "test_runs": list(test_runs),
-        "final_train_auc": float(history.history["lfp_auc"][-1]),
-        "final_val_auc": float(history.history["val_lfp_auc"][-1]),
+        "epochs_requested": int(epochs),
+        "epochs_run": int(len(history.history.get("loss", []))),
+        "batch_size": int(args.batch_size),
+        "seq_len": int(seq_len),
+        "max_len": int(seq_len),
+        "train_sequences": int(len(tr_idx)),
+        "val_sequences": int(len(va_idx)),
+        "total_sequences": int(len(runs)),
+        "sequence_coverage": float(len(tr_idx) / max(1, int(train_mask.sum() + len(tr_idx)))),
+        "split": split.as_dict(),
+        "factor_cols": FACTOR_COLS,
+        "factor_norm_stats": stats.stats,
+        "final_train_auc": _last("lfp_auc"),
+        "final_val_auc": _last("val_lfp_auc"),
+        "early_stopping": not smoke,
     }
-    
-    with open(meta_path, "w") as f:
-        json.dump(metadata, f, indent=2)
-    
-    
+    with open(META_PATH, "w", encoding="utf-8") as f:
+        json.dump(meta, f, indent=2)
+
+    print(f"[train_sfrnnr] seq_len={seq_len} train_seq={len(tr_idx)} val_seq={len(va_idx)} "
+          f"of {len(runs)} total")
+    print(f"[train_sfrnnr] epochs run {meta['epochs_run']}/{epochs} "
+          f"(early stopping {'on' if meta['early_stopping'] else 'off'})")
+    print(f"[train_sfrnnr] train auc {meta['final_train_auc']:.4f} "
+          f"val auc {meta['final_val_auc']:.4f}")
+    print(f"[train_sfrnnr] split -> {split.describe()}")
+    print(f"[train_sfrnnr] saved {MODEL_PATH.name} and {META_PATH.name}")
+
 
 if __name__ == "__main__":
     main()

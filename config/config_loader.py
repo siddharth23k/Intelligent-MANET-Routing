@@ -1,75 +1,105 @@
-"""Configuration loader for centralized settings management."""
+"""Centralised configuration.
+
+Every tunable that both the baseline and our method must agree on is read from
+paper_scenarios.yaml through this loader. Nothing in the pipeline should hold a
+magic number that also appears somewhere else.
+"""
+
+from __future__ import annotations
+
+from pathlib import Path
+from typing import Any, Dict, List
 
 import yaml
-from pathlib import Path
-from typing import Dict, Any, List
 
 
 class Config:
-    """Centralized configuration manager."""
-    
-    def __init__(self, config_path: str = None):
+    def __init__(self, config_path: str | Path | None = None):
         if config_path is None:
             config_path = Path(__file__).parent / "paper_scenarios.yaml"
-        
-        with open(config_path, 'r') as f:
-            self.config = yaml.safe_load(f)
-    
+        with open(config_path, "r", encoding="utf-8") as f:
+            self.config: Dict[str, Any] = yaml.safe_load(f)
+
+    # ---- scenario geometry -------------------------------------------------
     @property
     def area_size(self) -> List[int]:
-        """Get area size [width, height]."""
-        return self.config['paper_reference']['area_m']
-    
+        return self.config["paper_reference"]["area_m"]
+
     @property
     def area_center(self) -> float:
-        """Get center point of the area (assuming square)."""
-        area = self.area_size
-        return area[0] / 2
-    
+        return self.area_size[0] / 2.0
+
     @property
     def communication_radius_default(self) -> float:
-        """Get default communication radius."""
-        return float(self.config['evaluation_defaults']['radius_m'])
-    
+        return float(self.config["evaluation_defaults"]["radius_m"])
+
     @property
     def communication_radii(self) -> List[float]:
-        """Get all available communication radii."""
-        return [float(r) for r in self.config['paper_reference']['communication_radius_m']]
-    
+        return [float(r) for r in self.config["paper_reference"]["communication_radius_m"]]
+
+    # ---- evaluation --------------------------------------------------------
     @property
     def random_seed(self) -> int:
-        """Get default random seed."""
-        return int(self.config['evaluation_defaults']['random_seed'])
-    
+        return int(self.config["evaluation_defaults"]["random_seed"])
+
     @property
     def test_run_count(self) -> int:
-        """Get default test run count."""
-        return int(self.config['evaluation_defaults']['test_run_count'])
-    
+        return int(self.config["evaluation_defaults"]["test_run_count"])
+
+    @property
+    def val_run_count(self) -> int:
+        return int(self.config["evaluation_defaults"]["val_run_count"])
+
     @property
     def pairs_per_step(self) -> int:
-        """Get default pairs per step for evaluation."""
-        return int(self.config['evaluation_defaults']['pairs_per_step'])
-    
+        return int(self.config["evaluation_defaults"]["pairs_per_step"])
+
     @property
     def hello_interval(self) -> float:
-        """Get hello interval (default 1.0)."""
-        return 1.0
-    
+        return float(self.config["evaluation_defaults"]["hello_interval_s"])
+
+    # ---- labels ------------------------------------------------------------
+    @property
+    def labels(self) -> Dict[str, Any]:
+        return self.config["labels"]
+
+    @property
+    def label_horizon(self) -> int:
+        return int(self.config["labels"]["horizon_steps"])
+
+    @property
+    def rssi_sentinel(self) -> float:
+        return float(self.config["labels"]["rssi_sentinel"])
+
+    @property
+    def rssi_floor(self) -> float:
+        return float(self.config["labels"]["rssi_floor_db"])
+
+    # ---- survival metric ---------------------------------------------------
+    @property
+    def survival_horizon(self) -> int:
+        return int(self.config["survival"]["horizon_steps"])
+
+    # ---- model / smoke settings -------------------------------------------
+    @property
+    def training(self) -> Dict[str, Any]:
+        return self.config["training"]
+
+    @property
+    def smoke(self) -> Dict[str, Any]:
+        return self.config["smoke"]
+
     def get_paper_reference_config(self) -> Dict[str, Any]:
-        """Get the full paper reference configuration."""
-        return self.config['paper_reference']
-    
+        return self.config["paper_reference"]
+
     def get_evaluation_defaults(self) -> Dict[str, Any]:
-        """Get the evaluation defaults configuration."""
-        return self.config['evaluation_defaults']
+        return self.config["evaluation_defaults"]
 
 
-# Global config instance
-_config = None
+_config: Config | None = None
+
 
 def get_config() -> Config:
-    """Get global configuration instance."""
     global _config
     if _config is None:
         _config = Config()

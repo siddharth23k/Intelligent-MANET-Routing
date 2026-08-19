@@ -1,103 +1,76 @@
+"""Our router: reliability weighted Dijkstra over a dataset snapshot.
+
+Graph construction lives in graph_build so this module and routing_dijkstra
+cannot drift apart. Routing failures are counted and reported rather than
+swallowed: a bare `except: return None` is how a completely degenerate baseline
+went unnoticed for weeks in the comparison script.
+"""
+
+from __future__ import annotations
+
 import sys
-import numpy as np
-import pandas as pd
-import networkx as nx
-import matplotlib.pyplot as plt
-import matplotlib.patches as mpatches
+from collections import Counter
 from pathlib import Path
+from typing import Dict, List, Optional, Tuple
 
-sys.path.append(str(Path(__file__).resolve().parent))
-from predict import LinkFailurePredictor
+import networkx as nx
 
-AREA_CENTER_X = 250.0  
-AREA_CENTER_Y = 250.0
-DEFAULT_RADIUS = 150.0
+sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "config"))
+from bootstrap import setup_paths  # noqa: E402
+
+setup_paths()
+
+from config_loader import get_config  # noqa: E402
+from graph_build import SnapshotGraphs, build_snapshot_graphs, node_feature_matrix  # noqa: E402
+from metrics import route_metrics  # noqa: E402
+from predict import LinkFailurePredictor  # noqa: E402
+
+CFG = get_config()
+DEFAULT_RADIUS = CFG.communication_radius_default
+
+NodeId = int
+
 
 class DatasetRouter:
-    def __init__(self):
-                self.predictor = LinkFailurePredictor()
+    """Predicts node reliability, then routes on -log(reliability) edge weights."""
 
-    def _compute_node_features(self, snapshot):
-        node_features = {}
-        for _, row in snapshot.iterrows():
-            nid = int(row["node_id"])
-            
-            feat_vector = np.array([
-                row["neighbor_count"],
-                row["x"],
-                row["y"],
-                row["time"],
-                row["avg_rssi"],
-                row.get("dist_to_center", 0.0),
-                row.get("rssi_velocity", 0.0),
-                row.get("neighbor_velocity", 0.0),
-                row.get("pdr", 1.0),
-                row.get("log_delay", 0.0),
-                row.get("rssi_trend_3", 0.0),
-                row.get("neighbor_trend_3", 0.0),
-                row.get("rssi_std_5", 0.0),
-                row.get("neighbor_std_5", 0.0)
-            ])
-            node_features[nid] = feat_vector
-        return node_features
+    def __init__(self, predictor: Optional[LinkFailurePredictor] = None):
+        self.predictor = predictor or LinkFailurePredictor()
+        self.failures: Counter = Counter()
 
-    def build_graph(self, snapshot, radius=DEFAULT_RADIUS):
-        """
-        Build connectivity graphs for a single time snapshot.
+    def node_reliabilities(self, snapshot) -> Dict[NodeId, float]:
+        node_ids, X = node_feature_matrix(snapshot, self.predictor.features)
+        if not node_ids:
+            return {}
+        reliability, _ = self.predictor.predict(X)
+        return {int(n): float(r) for n, r in zip(node_ids, reliability)}
 
-        IMPORTANT LIMITATION / DESIGN CHOICE:
-        - The ML model is trained on *node-level* features and predicts node instability.
-        - Routing requires *edge-level* reliabilities. Without per-link measurements, we approximate
-          edge reliability from node reliabilities (conservative: weakest endpoint dominates).
-        """
-        node_features = self._compute_node_features(snapshot)
-        rows = snapshot.to_dict("records")
+    def build_graphs(self, snapshot, radius: float = DEFAULT_RADIUS) -> SnapshotGraphs:
+        return build_snapshot_graphs(snapshot, self.node_reliabilities(snapshot), radius)
 
-        G_ml = nx.Graph()
-        G_base = nx.Graph()
+    # Backwards compatible tuple form used by older scripts and the animation.
+    def build_graph(self, snapshot, radius: float = DEFAULT_RADIUS):
+        g = self.build_graphs(snapshot, radius=radius)
+        return g.ml, g.hop, g.positions
 
-        for nid in node_features:
-            G_ml.add_node(nid)
-            G_base.add_node(nid)
+    def find_ml_path(self, graph: nx.Graph, src: NodeId, dst: NodeId) -> Optional[List[NodeId]]:
+        return self._shortest_path(graph, src, dst, weight="weight", tag="ml")
 
-        edge_pairs = []
-        node_ids = sorted(node_features.keys())
-        X_nodes = np.vstack([node_features[nid] for nid in node_ids]) if node_ids else np.zeros((0, 0))
-        node_reliability = {}
-        if len(node_ids) > 0:
-            reliabilities, _ = self.predictor.predict(X_nodes)
-            node_reliability = {nid: float(r) for nid, r in zip(node_ids, reliabilities)}
+    def find_baseline_path(self, graph: nx.Graph, src: NodeId, dst: NodeId) -> Optional[List[NodeId]]:
+        return self._shortest_path(graph, src, dst, weight=None, tag="hop")
 
-        for i in range(len(rows)):
-            for j in range(i + 1, len(rows)):
-                n1, n2 = int(rows[i]["node_id"]), int(rows[j]["node_id"])
-                if n1 == n2:
-                    # Can happen if snapshot contains duplicate node_ids (e.g., mixed runs).
-                    continue
-                dist = np.sqrt((rows[i]["x"] - rows[j]["x"])**2 + (rows[i]["y"] - rows[j]["y"])**2)
+    def _shortest_path(self, graph, src, dst, weight, tag) -> Optional[List[NodeId]]:
+        try:
+            return nx.shortest_path(graph, int(src), int(dst), weight=weight)
+        except nx.NodeNotFound:
+            self.failures[f"{tag}:node_not_found"] += 1
+        except nx.NetworkXNoPath:
+            self.failures[f"{tag}:no_path"] += 1
+        return None
 
-                if dist <= radius:
-                    edge_pairs.append((n1, n2))
+    @staticmethod
+    def compute_route_metrics(graph: nx.Graph, path) -> Dict[str, float]:
+        return route_metrics(graph, path)
 
-        for (u, v) in edge_pairs:
-            ru = float(node_reliability.get(u, 0.5))
-            rv = float(node_reliability.get(v, 0.5))
-            # Conservative edge reliability: weakest endpoint dominates.
-            r = float(np.clip(min(ru, rv), 0.001, 0.999))
-            G_ml.add_edge(u, v, weight=-np.log(r), reliability=r)
-            G_base.add_edge(u, v, weight=1, reliability=r)
-
-        return G_ml, G_base, {int(r["node_id"]): (r["x"], r["y"]) for r in rows}
-
-    def find_ml_path(self, G, src, dst):
-        try: return nx.shortest_path(G, src, dst, weight="weight")
-        except: return None
-
-    def find_baseline_path(self, G, src, dst):
-        try: return nx.shortest_path(G, src, dst)
-        except: return None
-
-    def compute_route_metrics(self, G, path):
-        if not path or len(path) < 2: return {"avg_reliability": 0, "min_reliability": 0, "hop_count": 0}
-        rels = [G[u][v]["reliability"] for u, v in zip(path[:-1], path[1:])]
-        return {"avg_reliability": np.mean(rels), "min_reliability": np.min(rels), "hop_count": len(path)-1}
+    def failure_report(self) -> Dict[str, int]:
+        return dict(self.failures)

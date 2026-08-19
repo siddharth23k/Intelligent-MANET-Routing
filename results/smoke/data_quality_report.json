@@ -1,0 +1,173 @@
+{
+  "smoke": true,
+  "rows": 24000,
+  "runs": [
+    1,
+    2,
+    3,
+    4,
+    5,
+    6
+  ],
+  "features": [
+    "neighbor_count",
+    "x",
+    "y",
+    "time",
+    "avg_rssi",
+    "dist_to_center",
+    "rssi_velocity",
+    "neighbor_velocity",
+    "pdr",
+    "log_delay",
+    "rssi_trend_3",
+    "neighbor_trend_3",
+    "rssi_std_5",
+    "neighbor_std_5"
+  ],
+  "paper_factors": [
+    "d_res",
+    "LET",
+    "ND",
+    "RSSI",
+    "LS",
+    "LA",
+    "LQ_mean",
+    "LL_d",
+    "T_hello"
+  ],
+  "label_rate": 0.27116666666666667,
+  "label_rate_by_run": {
+    "1": 0.28575,
+    "2": 0.2855,
+    "3": 0.286,
+    "4": 0.25125,
+    "5": 0.25025,
+    "6": 0.26825
+  },
+  "constant_model_features": [],
+  "constant_paper_factors": [],
+  "traffic_is_causal": false,
+  "split": {
+    "train_runs": [
+      3,
+      4,
+      5
+    ],
+    "val_runs": [
+      2
+    ],
+    "test_runs": [
+      1,
+      6
+    ]
+  },
+  "rows_train": 12000,
+  "rows_val": 4000,
+  "rows_test": 8000,
+  "feature_summary": {
+    "neighbor_count": {
+      "mean": 8.319166666666666,
+      "std": 4.096386534360361,
+      "min": 0.0,
+      "max": 24.0,
+      "n_unique": 25
+    },
+    "x": {
+      "mean": 503.07034154166666,
+      "std": 240.58334516583656,
+      "min": 0.222,
+      "max": 998.48,
+      "n_unique": 22325
+    },
+    "y": {
+      "mean": 494.53207841666665,
+      "std": 242.08886024880087,
+      "min": 0.178,
+      "max": 999.149,
+      "n_unique": 22356
+    },
+    "time": {
+      "mean": 20.5,
+      "std": 11.543396380615196,
+      "min": 1.0,
+      "max": 40.0,
+      "n_unique": 40
+    },
+    "avg_rssi": {
+      "mean": -42.921313749999996,
+      "std": 5.2523399625447205,
+      "min": -95.0,
+      "max": 1.945,
+      "n_unique": 10194
+    },
+    "dist_to_center": {
+      "mean": 313.7207844368632,
+      "std": 134.55837693614873,
+      "min": 1.4571372618940126,
+      "max": 703.4799761592366,
+      "n_unique": 22622
+    },
+    "rssi_velocity": {
+      "mean": -0.006681666666666667,
+      "std": 4.212541001283812,
+      "min": -54.408,
+      "max": 59.851,
+      "n_unique": 12912
+    },
+    "neighbor_velocity": {
+      "mean": 0.050166666666666665,
+      "std": 1.5472771693813907,
+      "min": -9.0,
+      "max": 8.0,
+      "n_unique": 18
+    },
+    "pdr": {
+      "mean": 0.7947833336149128,
+      "std": 0.34314577809117625,
+      "min": 0.0,
+      "max": 1.0,
+      "n_unique": 64
+    },
+    "log_delay": {
+      "mean": 5.858053404976139,
+      "std": 8.519348963122136,
+      "min": 0.0,
+      "max": 24.79315940566548,
+      "n_unique": 197
+    },
+    "rssi_trend_3": {
+      "mean": -0.0067858888888888864,
+      "std": 2.0032948979093828,
+      "min": -21.288,
+      "max": 20.223,
+      "n_unique": 14083
+    },
+    "neighbor_trend_3": {
+      "mean": 0.04602777777777777,
+      "std": 0.9303732619953147,
+      "min": -5.0,
+      "max": 5.333333333333333,
+      "n_unique": 30
+    },
+    "rssi_std_5": {
+      "mean": 2.391056992295366,
+      "std": 2.809038649485086,
+      "min": 0.0,
+      "max": 33.00702835003479,
+      "n_unique": 22745
+    },
+    "neighbor_std_5": {
+      "mean": 1.2988805523179137,
+      "std": 0.9326468485679049,
+      "min": 0.0,
+      "max": 7.596051605933177,
+      "n_unique": 1833
+    }
+  },
+  "warnings": [
+    "traffic features (pdr, log_delay) come from end of run FlowMonitor aggregates, so their value at time t depends on packets sent after t. Enable periodic flow statistics in the simulation, or pass --allow-run-level-traffic to acknowledge the limitation."
+  ],
+  "problems": [],
+  "passed": true
+}

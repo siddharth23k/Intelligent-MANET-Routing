@@ -1,0 +1,39 @@
+{
+  "smoke": true,
+  "seed": 42,
+  "split": {
+    "train_runs": [
+      3,
+      4,
+      5
+    ],
+    "val_runs": [
+      2
+    ],
+    "test_runs": [
+      1,
+      6
+    ]
+  },
+  "radius_m": 150.0,
+  "survival_horizon_steps": 5,
+  "snapshots_per_run": 4,
+  "pairs_per_step": 2,
+  "decisions": 16,
+  "skipped": {
+    "no_edges": 0,
+    "no_common_path": 3
+  },
+  "frlfp": {
+    "snapshots": 8,
+    "routed_on_filtered": 16,
+    "fell_back_to_full_graph": 0,
+    "no_path": 3,
+    "fallback_rate": 0.0,
+    "mean_risky_node_fraction": 0.00125
+  },
+  "ours_routing_failures": {
+    "hop:no_path": 3,
+    "ml:no_path": 3
+  }
+}

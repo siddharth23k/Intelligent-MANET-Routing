@@ -1,3 +1,7 @@
+# Scenario parameters transcribed from the base paper, plus the settings that
+# control our own evaluation. Everything that both methods must agree on lives
+# here so the two pipelines cannot silently drift apart.
+
 paper_reference:
   simulator: ns-3.26
   area_m: [1000, 1000]
@@ -12,5 +16,54 @@ paper_reference:
 evaluation_defaults:
   random_seed: 42
   test_run_count: 6
+  val_run_count: 4          # carved out of the training runs, never out of test
   pairs_per_step: 5
   radius_m: 150.0
+  hello_interval_s: 1.0
+
+labels:
+  # A node is labelled a link failure at time t if, at t + horizon_steps, it has
+  # lost neighbour_drop neighbours, or its mean neighbour RSSI fell by
+  # rssi_drop_db, or it became fully isolated (RSSI hits the sentinel).
+  horizon_steps: 5
+  neighbour_drop: 2
+  rssi_drop_db: 15.0
+  rssi_sentinel: -1000.0
+  rssi_floor_db: -95.0      # sentinel is replaced with this before modelling
+
+survival:
+  # Ground truth routing metric. A path chosen at time t "survives" if every one
+  # of its hops is still within link_radius_m at t + horizon_steps. This is
+  # measured from the mobility trace, so no model can influence it.
+  horizon_steps: 5
+
+smoke:
+  # Settings used by --smoke everywhere. The point is to prove the whole chain
+  # executes, not to produce publishable numbers.
+  max_runs: 6
+  test_run_count: 2
+  val_run_count: 1
+  max_rows_per_run: 4000
+  snapshots_per_run: 4
+  pairs_per_step: 2
+  rf_estimators: 12
+  rf_max_depth: 6
+  xgb_estimators: 12
+  xgb_max_depth: 4
+  sfrnnr_epochs: 3
+  sfrnnr_max_train_sequences: 100
+  sfrnnr_seq_len: 32
+
+training:
+  rf_estimators: 100
+  rf_max_depth: 10
+  xgb_estimators: 300
+  xgb_max_depth: 5
+  xgb_learning_rate: 0.05
+  xgb_early_stopping_rounds: 20
+  sfrnnr_epochs: 30
+  sfrnnr_patience: 4
+  sfrnnr_gru_units: 16
+  sfrnnr_rule_units: 8
+  sfrnnr_n_mfs: 2
+  sfrnnr_batch_size: 64

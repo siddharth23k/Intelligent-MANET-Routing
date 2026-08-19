@@ -1,0 +1,4 @@
+method,n_evaluable,survival_rate,mean_surviving_fraction,mean_broken_hops
+ours,16,0.0625,0.31397456709956706,3.1875
+paper_baseline,16,0.0625,0.3715029761904762,2.9375
+classic_baseline,16,0.0625,0.3715029761904762,2.9375
