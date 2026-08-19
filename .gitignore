@@ -30,18 +30,15 @@ data/processed/dataset_manifest.json
 *.h5
 *.joblib
 
-# Generated results. results/smoke/ is committed on purpose so the output
-# format is visible without running anything.
+# Generated results. Model artifacts and the provenance files that describe them
+# are regenerated together by the pipeline; tracking only some of them is what
+# let the code and the shipped models drift apart. results/smoke/ is committed
+# on purpose so the output format is visible without running anything.
 /results/*.csv
 /results/*.json
 /results/comparison_summary.md
-
-# Provenance files are small and tracked deliberately: they record which split
-# and which statistics produced the current artifacts.
-!results/models/predictor_schema.json
-!results/models/sfrnnr_meta.json
-!results/models/feature_norm_stats.json
-!results/models/run_split.json
+/results/models/*
+!/results/models/.gitkeep
 
 # Scratch space for files retired by a cleanup.
 _to_delete/

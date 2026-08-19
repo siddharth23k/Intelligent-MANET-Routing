@@ -20,7 +20,7 @@ This is the metric the base paper reports. Our router minimises the sum of -log 
 | method | n_decisions | avg_reliability | min_reliability | avg_hops | baseline_avg_reliability | baseline_min_reliability | baseline_avg_hops | delta_avg_rel_pct | delta_min_rel_pct | delta_hops | wlt_n_decisions | wlt_win_rate | wlt_tie_rate | wlt_loss_rate | stat_n_runs | stat_mean_delta | stat_t_p_value | stat_wilcoxon_p_value | stat_cohens_d |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
 | ours | 16 | 0.466593 | 0.375103 | 4.5625 | 0.432908 | 0.359098 | 4.5 | 7.78095 | 4.45721 | 0.0625 | 16 | 0.875 | 0.125 | 0 | 2 | 0.0336844 | 0.0228763 | 0.5 | 19.6695 |
-| paper_baseline | 16 | 0.617997 | 0.59171 | 4.5 | 0.432908 | 0.359098 | 4.5 | 42.7546 | 64.777 | 0 | 16 | 0.875 | 0 | 0.125 | 2 | 0.185088 | 0.0533867 | 0.5 | 8.41226 |
+| paper_baseline | 16 | 0.620219 | 0.594583 | 4.5 | 0.432908 | 0.359098 | 4.5 | 43.2678 | 65.577 | 0 | 16 | 0.875 | 0 | 0.125 | 2 | 0.18731 | 0.0530691 | 0.5 | 8.46284 |
 
 
 ## 3. Baseline health

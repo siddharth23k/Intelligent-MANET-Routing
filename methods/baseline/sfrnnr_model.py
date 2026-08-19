@@ -96,8 +96,20 @@ def build_sfrnnr_model(
     thr_hidden: int = 8,
     dropout: float = 0.0,
     learning_rate: float = 2e-3,
+    run_eagerly: bool = False,
     name: str = "SFRNNR",
 ) -> keras.Model:
+    """Build the SFRNNR.
+
+    run_eagerly skips graph compilation.
+
+    Keras 3 retraces its train step whenever the batch shape changes, and the
+    final batch of an epoch is usually a different size from the rest. On a
+    small run the tracing cost dominates completely, and on some CPU builds it
+    stalls outright. Real training amortises a handful of traces over many
+    epochs, so graph mode stays the default there; the smoke configuration runs
+    eagerly. pipeline/diagnose_tf.py measures this directly.
+    """
     input_shape = (seq_len, n_factors) if seq_len is not None else (None, n_factors)
     inputs = keras.Input(shape=input_shape, name="factor_sequence")
 
@@ -127,6 +139,8 @@ def build_sfrnnr_model(
         # String form on purpose: a metric instance on a multi output model
         # triggers repeated retracing on some Keras 3 builds.
         metrics={"lfp": "auc"},
+        run_eagerly=bool(run_eagerly),
+        jit_compile=False,
     )
     return model
 

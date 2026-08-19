@@ -58,7 +58,7 @@
     "rf_class": "RandomForestClassifier",
     "xgb_class": "XGBClassifier",
     "max_abs_probability_difference": 0.26437084704781166,
-    "mean_abs_probability_difference": 0.09785534884553082
+    "mean_abs_probability_difference": 0.0978553488455308
   },
   "test": {
     "rf": {

@@ -35,6 +35,8 @@ from tensorflow import keras  # noqa: E402
 
 print(f"[train_sfrnnr] tensorflow ready in {time.perf_counter() - _t0:.1f}s", flush=True)
 
+from sklearn.metrics import roc_auc_score  # noqa: E402
+
 from config_loader import get_config  # noqa: E402
 from label_utils import add_link_failure_labels, drop_label_aux_columns  # noqa: E402
 from normalization import MinMaxStats  # noqa: E402
@@ -77,6 +79,138 @@ def build_sequences(df: pd.DataFrame, seq_len: int):
     return np.stack(windows), np.stack(labels), np.stack(thresholds), np.asarray(runs, dtype=int)
 
 
+class TrainingHistory:
+    """Minimal stand in for a Keras History object."""
+
+    def __init__(self):
+        self.history: dict[str, list] = {}
+
+    def record(self, **values) -> None:
+        for key, value in values.items():
+            self.history.setdefault(key, []).append(float(value))
+
+
+def _batched(n: int, batch_size: int, rng: np.random.Generator):
+    """Shuffled index batches, all exactly batch_size.
+
+    Every batch having the same shape means graph mode traces the train step
+    once instead of once per distinct batch size, which is what made Keras
+    retrace on the ragged final batch. Reshuffling each epoch means the dropped
+    remainder is a different handful of sequences every time.
+    """
+    order = rng.permutation(n)
+    usable = (n // batch_size) * batch_size
+    for start in range(0, usable, batch_size):
+        yield order[start : start + batch_size]
+
+
+def predict_lfp(model, X: np.ndarray, batch_size: int) -> np.ndarray:
+    """Forward pass in batches, calling the model directly.
+
+    model.predict builds a tf.data pipeline even for a plain numpy array. That
+    adapter is the component that stalls on some TensorFlow builds, and calling
+    the model as a function skips it entirely: no data adapter, no predict
+    function, just ops.
+    """
+    if len(X) == 0:
+        return np.zeros((0, 0), dtype=np.float32)
+    chunks = []
+    for start in range(0, len(X), batch_size):
+        outputs = model(X[start : start + batch_size], training=False)
+        chunks.append(np.asarray(outputs["lfp"])[:, :, 0])
+    return np.concatenate(chunks, axis=0)
+
+
+def _auc(y_true: np.ndarray, y_score: np.ndarray) -> float:
+    flat_true = y_true.reshape(-1)
+    flat_score = y_score.reshape(-1)
+    if len(np.unique(flat_true)) < 2:
+        return float("nan")
+    return float(roc_auc_score(flat_true, flat_score))
+
+
+def train_with_loop(
+    model,
+    X_train, y_train, thr_train,
+    X_val, y_val,
+    epochs: int,
+    batch_size: int,
+    patience: int,
+    seed: int,
+    verbose: bool = True,
+) -> TrainingHistory:
+    """Explicit training loop over train_on_batch.
+
+    Written out rather than calling model.fit because fit's data adapter and
+    epoch iterator sit between the caller and the first gradient step, and a
+    stall in there is invisible. Here every batch is timed and reported, early
+    stopping is explicit, and only one tensor shape ever reaches the model.
+    """
+    rng = np.random.default_rng(seed)
+    history = TrainingHistory()
+    batches = max(1, len(X_train) // batch_size)
+
+    best_auc, best_weights, since_best = -np.inf, None, 0
+    for epoch in range(epochs):
+        started = time.perf_counter()
+        losses = []
+        for index, batch in enumerate(_batched(len(X_train), batch_size, rng)):
+            outputs = model.train_on_batch(
+                X_train[batch],
+                {"lfp": y_train[batch], "lfp_threshold": thr_train[batch]},
+                return_dict=True,
+            )
+            losses.append(float(outputs.get("loss", np.nan)))
+            if verbose and epoch == 0 and index < 3:
+                print(f"[train_sfrnnr]   batch {index + 1}/{batches} "
+                      f"loss={losses[-1]:.4f} ({time.perf_counter() - started:.1f}s)", flush=True)
+
+        train_auc = _auc(y_train, predict_lfp(model, X_train, batch_size))
+        val_auc = float("nan")
+        if len(X_val):
+            val_auc = _auc(y_val, predict_lfp(model, X_val, batch_size))
+
+        history.record(loss=np.nanmean(losses), lfp_auc=train_auc, val_lfp_auc=val_auc)
+        if verbose:
+            print(f"[train_sfrnnr] epoch {epoch + 1}/{epochs} "
+                  f"loss={np.nanmean(losses):.4f} auc={train_auc:.4f} "
+                  f"val_auc={val_auc:.4f} ({time.perf_counter() - started:.1f}s)", flush=True)
+
+        score = val_auc if not np.isnan(val_auc) else train_auc
+        if score > best_auc:
+            best_auc, best_weights, since_best = score, model.get_weights(), 0
+        else:
+            since_best += 1
+            if patience > 0 and since_best >= patience:
+                if verbose:
+                    print(f"[train_sfrnnr] early stopping at epoch {epoch + 1} "
+                          f"(best score {best_auc:.4f})", flush=True)
+                break
+
+    if best_weights is not None:
+        model.set_weights(best_weights)
+    return history
+
+
+class EpochProgress(keras.callbacks.Callback):
+    """Print one line per epoch with elapsed seconds.
+
+    Keras' own progress bar is suppressed in scripted runs, and a silent fit is
+    indistinguishable from a stalled one.
+    """
+
+    def on_train_begin(self, logs=None):
+        self._started = time.perf_counter()
+        print("[train_sfrnnr] epoch 0 starting", flush=True)
+
+    def on_epoch_end(self, epoch, logs=None):
+        logs = logs or {}
+        auc = logs.get("lfp_auc", logs.get("auc", float("nan")))
+        print(f"[train_sfrnnr] epoch {epoch + 1} done in "
+              f"{time.perf_counter() - self._started:.1f}s "
+              f"loss={logs.get('loss', float('nan')):.4f} auc={auc:.4f}", flush=True)
+
+
 def _history_value(history, *keys, default=float("nan")) -> float:
     for key in keys:
         values = history.history.get(key)
@@ -101,6 +235,13 @@ def main() -> None:
     parser.add_argument("--seed", type=int, default=CFG.random_seed)
     parser.add_argument("--test-run-count", type=int, default=None)
     parser.add_argument("--val-run-count", type=int, default=None)
+    parser.add_argument("--run-eagerly", dest="run_eagerly", action="store_true", default=None,
+                        help="skip graph compilation; default on for --smoke")
+    parser.add_argument("--no-run-eagerly", dest="run_eagerly", action="store_false",
+                        help="force graph mode even in --smoke")
+    parser.add_argument("--fit-backend", choices=("loop", "keras"), default="loop",
+                        help="loop: explicit train_on_batch loop (default). "
+                             "keras: model.fit, useful for comparison.")
     args = parser.parse_args()
 
     smoke = args.smoke
@@ -169,40 +310,55 @@ def main() -> None:
     print(f"[train_sfrnnr] seq_len={seq_len} train_seq={len(train_idx)} "
           f"val_seq={len(val_idx)} of {len(runs)} total", flush=True)
 
+    run_eagerly = smoke if args.run_eagerly is None else bool(args.run_eagerly)
     model = build_sfrnnr_model(
         seq_len=seq_len,
         n_factors=N_FACTORS,
         n_mfs=args.n_mfs or N_MFS,
         gru_units=args.gru_units,
         rule_units=args.rule_units,
+        run_eagerly=run_eagerly,
     )
+    print(f"[train_sfrnnr] model compiled (run_eagerly={run_eagerly}, "
+          f"params={model.count_params()})", flush=True)
 
-    callbacks = []
-    if not smoke:
-        callbacks = [
-            keras.callbacks.EarlyStopping(
-                monitor="val_lfp_auc",
-                mode="max",
-                patience=int(training["sfrnnr_patience"]),
-                restore_best_weights=True,
-                verbose=1,
-            ),
-            keras.callbacks.ReduceLROnPlateau(
-                monitor="val_loss", factor=0.5, patience=2, min_lr=1e-5, verbose=0
-            ),
-        ]
+    patience = 0 if smoke else int(training["sfrnnr_patience"])
+    batches_per_epoch = max(1, len(train_idx) // batch_size)
+    dropped_per_epoch = len(train_idx) - batches_per_epoch * batch_size
+    print(f"[train_sfrnnr] fitting for up to {epochs} epoch(s) with the "
+          f"'{args.fit_backend}' backend: X{X[train_idx].shape} batch={batch_size} "
+          f"({batches_per_epoch} batches per epoch, {dropped_per_epoch} sequence(s) "
+          f"dropped per epoch by reshuffling)", flush=True)
 
-    print(f"[train_sfrnnr] fitting for up to {epochs} epoch(s)", flush=True)
     fit_started = time.perf_counter()
-    history = model.fit(
-        X[train_idx],
-        {"lfp": y[train_idx], "lfp_threshold": thresholds[train_idx]},
-        validation_data=(X[val_idx], {"lfp": y[val_idx], "lfp_threshold": thresholds[val_idx]}),
-        epochs=epochs,
-        batch_size=batch_size,
-        callbacks=callbacks,
-        verbose=2 if not smoke else 0,
-    )
+    if args.fit_backend == "loop":
+        history = train_with_loop(
+            model,
+            X[train_idx], y[train_idx], thresholds[train_idx],
+            X[val_idx], y[val_idx],
+            epochs=epochs,
+            batch_size=batch_size,
+            patience=patience,
+            seed=args.seed,
+        )
+    else:
+        callbacks: list = [EpochProgress()]
+        if patience > 0:
+            callbacks.append(
+                keras.callbacks.EarlyStopping(
+                    monitor="val_lfp_auc", mode="max", patience=patience,
+                    restore_best_weights=True, verbose=1,
+                )
+            )
+        history = model.fit(
+            X[train_idx],
+            {"lfp": y[train_idx], "lfp_threshold": thresholds[train_idx]},
+            validation_data=(X[val_idx], {"lfp": y[val_idx], "lfp_threshold": thresholds[val_idx]}),
+            epochs=epochs,
+            batch_size=batch_size,
+            callbacks=callbacks,
+            verbose=2,
+        )
     print(f"[train_sfrnnr] fit done in {time.perf_counter() - fit_started:.1f}s", flush=True)
 
     MODEL_PATH.parent.mkdir(parents=True, exist_ok=True)
@@ -226,7 +382,8 @@ def main() -> None:
         "factor_norm_stats": stats.stats,
         "final_train_auc": _history_value(history, "lfp_auc", "auc"),
         "final_val_auc": _history_value(history, "val_lfp_auc", "val_auc"),
-        "early_stopping": not smoke,
+        "early_stopping": patience > 0,
+        "fit_backend": args.fit_backend,
     }
     with open(META_PATH, "w", encoding="utf-8") as handle:
         json.dump(meta, handle, indent=2)

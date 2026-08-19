@@ -107,9 +107,15 @@ def apply_sfrnnr(
     threshold_values = np.full(len(work), np.nan, dtype=np.float64)
 
     if len(X):
-        prediction = model.predict(X, batch_size=batch_size, verbose=0)
-        lfp_sequence = np.asarray(prediction["lfp"])[:, :, 0]
-        threshold_sequence = np.asarray(prediction["lfp_threshold"])[:, :, 0]
+        # Called directly rather than through model.predict, which builds a
+        # tf.data pipeline even for a numpy array and stalls on some builds.
+        lfp_chunks, threshold_chunks = [], []
+        for start in range(0, len(X), batch_size):
+            outputs = model(X[start : start + batch_size], training=False)
+            lfp_chunks.append(np.asarray(outputs["lfp"])[:, :, 0])
+            threshold_chunks.append(np.asarray(outputs["lfp_threshold"])[:, :, 0])
+        lfp_sequence = np.concatenate(lfp_chunks, axis=0)
+        threshold_sequence = np.concatenate(threshold_chunks, axis=0)
         for index, (rows, valid) in enumerate(blocks):
             count = min(len(rows), len(valid))
             if count:

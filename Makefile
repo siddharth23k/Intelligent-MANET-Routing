@@ -1,6 +1,6 @@
 PYTHON ?= python3
 
-.PHONY: help smoke test lint data features validate train baseline compare all clean
+.PHONY: help smoke test lint diagnose data features validate train baseline compare all clean
 
 help:
 	@echo "make smoke     end to end run on a tiny subset (about 20 seconds)"
@@ -15,6 +15,7 @@ help:
 	@echo "  make baseline  5  SFRNNR paper baseline"
 	@echo "  make compare   6  three way comparison"
 	@echo ""
+	@echo "make diagnose  time each TensorFlow component, to find a slow stage"
 	@echo "make clean     remove generated datasets, models and results"
 
 smoke:
@@ -25,6 +26,9 @@ test:
 
 lint:
 	$(PYTHON) -m compileall -q config methods pipeline tests
+
+diagnose:
+	$(PYTHON) pipeline/diagnose_tf.py
 
 data:
 	$(PYTHON) pipeline/generate_data.py

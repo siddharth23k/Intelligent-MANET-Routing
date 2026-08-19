@@ -205,11 +205,24 @@ The predictor artifact tests skip when nothing has been trained yet, so run
 
 ## Troubleshooting
 
-**A stage hangs.** Output is streamed live, so the last printed line tells you
-where. Stage 5 prints a marker before and after the TensorFlow import, which is
-usually the slowest part on a cold start. Run it alone with
-`python pipeline/smoke_test.py --stages 5`, and raise the per stage limit with
-`MANET_SMOKE_STAGE_TIMEOUT=1200`.
+**Stage 5 stalls.** Nothing in the SFRNNR path calls `model.fit` or
+`model.predict`. Both build a `tf.data` pipeline even for a plain numpy array,
+and that adapter is the component that deadlocks on some TensorFlow builds.
+Training goes through `train_on_batch` and every forward pass calls the model
+directly, so there is no adapter and no predict function anywhere. The loop also
+feeds one fixed batch shape, so graph mode traces the train step once instead of
+retracing on every ragged batch. `model.fit` is still reachable with
+`--fit-backend keras` for comparison, and `--run-eagerly` / `--no-run-eagerly`
+force the execution mode.
+
+**Any stage hangs.** Output streams live and stage 5 prints one line per epoch,
+so the last printed line tells you where. Run a single stage with
+`python pipeline/smoke_test.py --stages 5`, raise the limit with
+`MANET_SMOKE_STAGE_TIMEOUT=1200`, and run `make diagnose` to time each
+TensorFlow component individually in both eager and graph mode. The probe that
+never prints its time is the one that hangs. `make diagnose` also probes the
+`fit` paths the pipeline no longer uses, so a stall there is informative rather
+than blocking.
 
 **Stage 3 fails on traffic features.** Either rerun the simulation with
 `--logFlowStats` (the default) so the per second counters exist, or pass
